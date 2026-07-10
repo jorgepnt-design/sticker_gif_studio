@@ -6,7 +6,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   ArrowLeft, Film, Image as ImageIcon, Clapperboard, Loader2, X, Share2,
-  Download, Type as TypeIcon, Trash2, Library, RefreshCcw, AlertTriangle, CheckCircle2,
+  Download, Type as TypeIcon, Trash2, Library, RefreshCcw, AlertTriangle, CheckCircle2, Video,
 } from 'lucide-react';
 import { navigate } from '../lib/router';
 import { useToast } from '../components/Toast';
@@ -17,6 +17,7 @@ import {
   decodeGifFrames, loadImageFrames, buildSequence, encodeGif, targetDims, drawCover,
   ASPECTS, MAX_VIDEO_BYTES,
 } from '../lib/gif';
+import { recordSequenceToVideo, WHATSAPP_GIF_MAX_SECONDS } from '../lib/video';
 import { ctx2d, autoRemoveBackground, drawTextLayer, uid } from '../lib/imaging';
 import { saveSticker } from '../lib/db';
 import { shareOrDownload, downloadBlob, formatBytes } from '../lib/share';
@@ -72,6 +73,7 @@ export function GifStudioPage({ params }: { params: URLSearchParams }) {
   const [busy, setBusy] = useState<{ label: string; progress: number | null } | null>(null);
   const [result, setResult] = useState<{ blob: Blob; url: string } | null>(null);
   const [confirmBack, setConfirmBack] = useState(false);
+  const [showWaGif, setShowWaGif] = useState(false);
   const cancelRef = useRef<(() => void) | null>(null);
 
   const previewRef = useRef<HTMLCanvasElement>(null);
@@ -323,6 +325,35 @@ export function GifStudioPage({ params }: { params: URLSearchParams }) {
         `Kleinstmöglich: ${formatBytes(best.blob.size)}. Für noch kleiner das Video kürzen oder Tempo erhöhen.`,
         'info',
       );
+    }
+  };
+
+  /**
+   * Exportiert die Animation als kurzes Video (MP4/WebM, max. 6 s) und teilt/lädt es.
+   * Damit lässt sich in WhatsApp über den „GIF“-Schalter ein eigenes GIF hinzufügen.
+   */
+  const exportForWhatsAppGif = async () => {
+    if (!frames?.length) return;
+    // Eine saubere Schleife der Animation, gedeckelt auf 6 s (WhatsApp-Grenze)
+    const seq = buildSequence(skipped(frames), direction, speed / 100);
+    const dims = targetDims(frames[0].canvas.width, frames[0].canvas.height, aspect, Math.min(size, 480));
+    setBusy({ label: 'Video wird aufgenommen …', progress: 0 });
+    try {
+      const { blob, ext } = await recordSequenceToVideo(
+        seq,
+        dims.width,
+        dims.height,
+        renderFrame(false), // Video hat keinen Alphakanal → ohne Freistellen, weißer Hintergrund
+        { maxSeconds: WHATSAPP_GIF_MAX_SECONDS, background: '#ffffff' },
+        (v) => setBusy({ label: 'Video wird aufgenommen …', progress: v }),
+      );
+      setBusy(null);
+      const shared = await shareOrDownload(blob, `whatsapp-gif-${Date.now()}.${ext}`, 'Für WhatsApp-GIF');
+      setShowWaGif(true); // Anleitung einblenden
+      toast(shared ? 'Video geteilt – jetzt in Fotos sichern' : `Video gespeichert (${formatBytes(blob.size)})`, 'success');
+    } catch {
+      toast('Videoaufnahme fehlgeschlagen', 'error');
+      setBusy(null);
     }
   };
 
@@ -680,6 +711,20 @@ export function GifStudioPage({ params }: { params: URLSearchParams }) {
               </button>
             </div>
 
+            {/* Für WhatsApp-GIF: als kurzes Video exportieren */}
+            <button
+              onClick={() => void exportForWhatsAppGif()}
+              className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-green-500 to-emerald-600 py-3.5 font-bold text-white shadow-lg active:scale-95"
+            >
+              <Video className="h-5 w-5" /> Als WhatsApp-GIF (Video)
+            </button>
+            <button
+              onClick={() => setShowWaGif(true)}
+              className="mt-2 w-full text-center text-xs font-semibold text-emerald-600 dark:text-emerald-400"
+            >
+              Wie füge ich es zu WhatsApp-GIFs hinzu?
+            </button>
+
             {mode === 'anim' && (
               <p className="mt-4 rounded-2xl bg-teal-50 p-3 text-xs leading-relaxed text-teal-900 dark:bg-teal-900/30 dark:text-teal-200">
                 <strong>Hinweis:</strong> Das GIF kann in WhatsApp direkt als Animation gesendet werden. Für echte
@@ -747,6 +792,30 @@ export function GifStudioPage({ params }: { params: URLSearchParams }) {
         onClose={() => setConfirmBack(false)}
       >
         Die geladenen Frames gehen verloren.
+      </Modal>
+
+      <Modal
+        open={showWaGif}
+        title="Als GIF in WhatsApp verwenden"
+        confirmLabel="Verstanden"
+        onConfirm={() => setShowWaGif(false)}
+        onClose={() => setShowWaGif(false)}
+      >
+        <div className="space-y-2 text-left">
+          <p>
+            WhatsApp fügt eigene GIFs am zuverlässigsten über ein <strong>kurzes Video</strong> hinzu (bis 6&nbsp;Sek.):
+          </p>
+          <ol className="list-decimal space-y-1 pl-4">
+            <li>Oben auf <strong>„Als WhatsApp-GIF (Video)“</strong> tippen und das Video <strong>in Fotos/Galerie speichern</strong>.</li>
+            <li>In WhatsApp einen Chat öffnen → <strong>Anhang (＋)</strong> → <strong>Foto &amp; Video</strong> → das gespeicherte Video wählen.</li>
+            <li>Oben auf den <strong>„GIF“-Schalter</strong> tippen (erscheint bei Videos bis 6&nbsp;Sek.) und senden.</li>
+            <li>Danach erscheint dein GIF in WhatsApp unter den <strong>zuletzt verwendeten GIFs</strong> (GIF-Symbol im Emoji-Feld).</li>
+          </ol>
+          <p className="text-xs text-slate-400">
+            Hinweis: Ein direktes „Zu WhatsApp-GIFs hinzufügen“ per Knopfdruck erlauben nur native Apps – über den
+            Video-Weg klappt es aber zuverlässig auf iPhone und Android.
+          </p>
+        </div>
       </Modal>
     </div>
   );
