@@ -57,6 +57,10 @@ export function loadVideo(file: Blob, onStatus?: (label: string) => void): Promi
       video.videoWidth > 0 &&
       video.videoHeight > 0;
 
+    // iOS/Safari melden bei manchen (z. B. mit dem iPhone aufgenommenen) Videos
+    // zunächst duration = Infinity. Erst ein Sprung weit hinter das Ende erzwingt
+    // die Berechnung der echten Länge. Danach zurück an den Anfang springen.
+    let forcedDurationSeek = false;
     const kickSafari = () => {
       if (Number.isFinite(video.duration) && video.duration > 0) {
         onStatus?.('Videovorschau wird vorbereitet ...');
@@ -67,6 +71,15 @@ export function loadVideo(file: Blob, onStatus?: (label: string) => void): Promi
           } catch {
             /* Safari kann das Setzen kurz vor HAVE_METADATA ablehnen. */
           }
+        }
+      } else if (video.readyState >= HTMLMediaElement.HAVE_METADATA && !forcedDurationSeek) {
+        // Länge unbekannt, aber Metadaten da → einmalig weit ans Ende spulen
+        onStatus?.('Videodaten werden gelesen ...');
+        forcedDurationSeek = true;
+        try {
+          video.currentTime = 1e101;
+        } catch {
+          /* ignorieren – der play()-Fallback greift */
         }
       } else {
         onStatus?.('Videodaten werden gelesen ...');
