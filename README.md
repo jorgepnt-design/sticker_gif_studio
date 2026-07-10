@@ -1,4 +1,4 @@
-# Sticker & GIF Studio 🎨
+# Sticker & GIF Studio *by Jorge* 🎨
 
 Eine moderne Progressive Web App (PWA) zum Erstellen von **WhatsApp-Stickern, Memes und Profilbildern** – direkt im Browser, optimiert für iPhone und Android.
 

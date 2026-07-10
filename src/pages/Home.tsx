@@ -73,8 +73,13 @@ export function HomePage() {
     <div className="page-in px-4 pt-6 safe-top">
       {/* Kopfbereich */}
       <header className="mb-6">
-        <h1 className="bg-gradient-to-r from-emerald-500 via-teal-500 to-violet-500 bg-clip-text text-3xl font-extrabold text-transparent">
-          Sticker &amp; GIF Studio
+        <h1 className="text-3xl font-extrabold leading-tight">
+          <span className="bg-gradient-to-r from-emerald-500 via-teal-500 to-violet-500 bg-clip-text text-transparent">
+            Sticker &amp; GIF Studio
+          </span>{' '}
+          <span className="whitespace-nowrap text-base font-semibold italic text-violet-400 dark:text-violet-300">
+            by Jorge
+          </span>
         </h1>
         <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
           Eigene WhatsApp-Sticker in wenigen Minuten – alles bleibt auf deinem Gerät.

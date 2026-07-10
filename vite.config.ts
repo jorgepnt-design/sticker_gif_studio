@@ -11,7 +11,7 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'apple-touch-icon.png'],
       manifest: {
-        name: 'Sticker & GIF Studio',
+        name: 'Sticker & GIF Studio by Jorge',
         short_name: 'Sticker Studio',
         description:
           'WhatsApp-Sticker, Memes und Profilbilder direkt auf dem Gerät erstellen – ohne Konto, ohne Upload.',
