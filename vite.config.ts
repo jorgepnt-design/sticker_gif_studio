@@ -3,7 +3,11 @@ import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
-export default defineConfig({
+// Unterpfad für GitHub Pages (Projektseite). Im Dev-Modus bleibt die App unter "/".
+const BASE = '/sticker_gif_studio/';
+
+export default defineConfig(({ command }) => ({
+  base: command === 'build' ? BASE : '/',
   plugins: [
     react(),
     tailwindcss(),
@@ -16,7 +20,9 @@ export default defineConfig({
         description:
           'WhatsApp-Sticker, Memes und Profilbilder direkt auf dem Gerät erstellen – ohne Konto, ohne Upload.',
         lang: 'de',
-        start_url: '/',
+        // start_url/scope müssen unter dem GitHub-Pages-Unterpfad liegen
+        start_url: command === 'build' ? BASE : '/',
+        scope: command === 'build' ? BASE : '/',
         display: 'standalone',
         orientation: 'portrait',
         background_color: '#0d1117',
@@ -32,4 +38,4 @@ export default defineConfig({
       },
     }),
   ],
-});
+}));
