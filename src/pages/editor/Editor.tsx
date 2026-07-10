@@ -110,8 +110,11 @@ function worldToImage(pt: { x: number; y: number }, t: ImageTransform, img: HTML
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
+type EditorTool = 'move' | 'erase' | 'restore' | 'lasso' | 'draw' | 'drawErase';
+
 type Gesture =
   | { kind: 'brush'; last: { x: number; y: number } }
+  | { kind: 'lasso'; points: { x: number; y: number }[] }
   | { kind: 'draw'; last: { x: number; y: number } }
   | { kind: 'drag'; target: 'image' | string; start: { x: number; y: number }; orig: { x: number; y: number } }
   | {
@@ -137,7 +140,7 @@ export function EditorPage({ params }: { params: URLSearchParams }) {
   const [, setRenderTick] = useState(0); // Neuzeichnen nach Filter-Neuberechnung
   const [selection, setSelection] = useState<'image' | string | null>(null);
   const [tab, setTabState] = useState<Tab>('text');
-  const [tool, setTool] = useState<'move' | 'erase' | 'restore' | 'draw' | 'drawErase'>('move');
+  const [tool, setTool] = useState<EditorTool>('move');
   const [brushSize, setBrushSize] = useState(30);
   const [tolerance, setTolerance] = useState(30);
   const [drawColor, setDrawColor] = useState('#ef4444');
@@ -155,6 +158,7 @@ export function EditorPage({ params }: { params: URLSearchParams }) {
   const filteredOrigRef = useRef<HTMLCanvasElement | null>(null);
   /** Freihand-Zeichnung (512×512 Welt-Koordinaten) */
   const drawingRef = useRef<HTMLCanvasElement | null>(null);
+  const lassoPointsRef = useRef<{ x: number; y: number }[]>([]);
   const displayRef = useRef<HTMLCanvasElement>(null);
   const galleryInput = useRef<HTMLInputElement>(null);
   const cameraInput = useRef<HTMLInputElement>(null);
@@ -491,6 +495,49 @@ export function EditorPage({ params }: { params: URLSearchParams }) {
     bump();
   };
 
+  const applyLassoSelection = (points: { x: number; y: number }[]) => {
+    const img = imageRef.current;
+    if (!img || !doc.image || points.length < 3) {
+      lassoPointsRef.current = [];
+      return;
+    }
+
+    const imagePoints = points.map((p) => worldToImage(p, doc.image!, img));
+    const xs = imagePoints.map((p) => p.x);
+    const ys = imagePoints.map((p) => p.y);
+    const hasArea = Math.max(...xs) - Math.min(...xs) > 3 && Math.max(...ys) - Math.min(...ys) > 3;
+    if (!hasArea) {
+      lassoPointsRef.current = [];
+      toast('Freihand-Auswahl war zu klein', 'error');
+      return;
+    }
+
+    pushUndo();
+    const mask = createCanvas(img.width, img.height);
+    const mctx = ctx2d(mask);
+    mctx.beginPath();
+    mctx.moveTo(imagePoints[0].x, imagePoints[0].y);
+    for (const p of imagePoints.slice(1)) mctx.lineTo(p.x, p.y);
+    mctx.closePath();
+    mctx.fillStyle = '#000';
+    mctx.fill();
+
+    const applyMask = (target: HTMLCanvasElement) => {
+      const tctx = ctx2d(target);
+      tctx.save();
+      tctx.globalCompositeOperation = 'destination-in';
+      tctx.drawImage(mask, 0, 0);
+      tctx.restore();
+    };
+
+    applyMask(img);
+    if (filteredRef.current && filteredRef.current !== img) applyMask(filteredRef.current);
+    dirtyRef.current = true;
+    lassoPointsRef.current = [];
+    toast('Freihand-Auswahl angewendet', 'success');
+    bump();
+  };
+
   /** Freihand-Zeichnen / Zeichnung radieren (in Welt-Koordinaten) */
   const applyDraw = (from: { x: number; y: number }, to: { x: number; y: number }) => {
     if (!drawingRef.current) drawingRef.current = createCanvas(WORLD, WORLD);
@@ -558,6 +605,12 @@ export function EditorPage({ params }: { params: URLSearchParams }) {
       if (tool === 'draw' || tool === 'drawErase') {
         gestureRef.current = { kind: 'draw', last: pt };
         applyDraw(pt, pt);
+      } else if (tool === 'lasso') {
+        if (hasImage) {
+          lassoPointsRef.current = [pt];
+          gestureRef.current = { kind: 'lasso', points: lassoPointsRef.current };
+          bump();
+        }
       } else if (tool !== 'move') {
         if (hasImage) {
           pushUndo();
@@ -612,6 +665,13 @@ export function EditorPage({ params }: { params: URLSearchParams }) {
     if (g.kind === 'brush') {
       applyBrush(g.last, pt);
       g.last = pt;
+    } else if (g.kind === 'lasso') {
+      const last = g.points[g.points.length - 1];
+      if (!last || Math.hypot(pt.x - last.x, pt.y - last.y) > 2) {
+        g.points.push(pt);
+        lassoPointsRef.current = g.points;
+        bump();
+      }
     } else if (g.kind === 'draw') {
       applyDraw(g.last, pt);
       g.last = pt;
@@ -649,8 +709,10 @@ export function EditorPage({ params }: { params: URLSearchParams }) {
   };
 
   const onPointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const g = gestureRef.current;
     pointers.current.delete(e.pointerId);
     if (pointers.current.size === 0) {
+      if (g?.kind === 'lasso') applyLassoSelection(g.points);
       gestureRef.current = null;
       gestureActive.current = false;
       bump(); // einmal in hoher Qualität nachzeichnen
@@ -710,6 +772,24 @@ export function EditorPage({ params }: { params: URLSearchParams }) {
         ctx.rotate(selectedLayer.rotation);
         ctx.strokeRect(-(m.w / 2 + pad), -(m.h / 2 + pad), m.w + pad * 2, m.h + pad * 2);
       }
+      ctx.restore();
+    }
+
+    if (tool === 'lasso' && lassoPointsRef.current.length > 1) {
+      const ctx = ctx2d(c);
+      const s = c.width / WORLD;
+      const points = lassoPointsRef.current;
+      ctx.save();
+      ctx.scale(s, s);
+      ctx.strokeStyle = '#10b981';
+      ctx.lineWidth = 3;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.setLineDash([10, 6]);
+      ctx.beginPath();
+      ctx.moveTo(points[0].x, points[0].y);
+      for (const p of points.slice(1)) ctx.lineTo(p.x, p.y);
+      ctx.stroke();
       ctx.restore();
     }
   });

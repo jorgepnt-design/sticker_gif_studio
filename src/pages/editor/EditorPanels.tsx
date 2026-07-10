@@ -37,8 +37,8 @@ export interface PanelProps {
   setDoc: (updater: (d: EditorDoc) => EditorDoc) => void;
   tab: Tab;
   setTab: (t: Tab) => void;
-  tool: 'move' | 'erase' | 'restore' | 'draw' | 'drawErase';
-  setTool: (t: 'move' | 'erase' | 'restore' | 'draw' | 'drawErase') => void;
+  tool: 'move' | 'erase' | 'restore' | 'lasso' | 'draw' | 'drawErase';
+  setTool: (t: 'move' | 'erase' | 'restore' | 'lasso' | 'draw' | 'drawErase') => void;
   brushSize: number;
   setBrushSize: (n: number) => void;
   tolerance: number;
@@ -173,6 +173,7 @@ export function EditorPanels(p: PanelProps) {
           <div className="space-y-3">
             <div className="flex flex-wrap gap-2">
               <ToolButton label="Automatisch" icon={Wand2} onClick={p.onAutoRemove} />
+              <ToolButton label="Freihand" icon={Pencil} active={p.tool === 'lasso'} onClick={() => p.setTool('lasso')} />
               <ToolButton label="Radierer" icon={Eraser} active={p.tool === 'erase'} onClick={() => p.setTool('erase')} />
               <ToolButton label="Zurückholen" icon={Undo2} active={p.tool === 'restore'} onClick={() => p.setTool('restore')} />
               <ToolButton label="Original" icon={RotateCcw} onClick={p.onResetImage} />
@@ -180,7 +181,7 @@ export function EditorPanels(p: PanelProps) {
             <SliderRow label={`Empfindlichkeit (Automatik): ${p.tolerance}`} min={5} max={90} value={p.tolerance} onChange={p.setTolerance} />
             <SliderRow label={`Pinselgröße: ${p.brushSize}`} min={6} max={80} value={p.brushSize} onChange={p.setBrushSize} />
             <p className="text-xs text-slate-400">
-              „Automatisch“ entfernt einfarbige Hintergründe. Mit Radierer/Zurückholen direkt auf dem Bild malen.
+              Freihand behaelt den umfahrenen Bereich. Mit Radierer/Zurueckholen direkt auf dem Bild malen.
             </p>
           </div>
         )}
