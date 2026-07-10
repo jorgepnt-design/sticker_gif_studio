@@ -86,6 +86,14 @@ const FILTER_PRESETS: { id: FilterPreset; label: string }[] = [
   { id: 'sharpen', label: 'Schärfen' },
 ];
 
+const BORDER_PRESETS = [
+  { label: 'Kein', width: 0 },
+  { label: 'Klein', width: 6 },
+  { label: 'Normal', width: 12 },
+  { label: 'Groß', width: 22 },
+  { label: 'Extra', width: 36 },
+];
+
 /** Kleine Hilfskomponenten */
 function ToolButton({ label, icon: Icon, onClick, active }: { label: string; icon: typeof ImageIcon; onClick: () => void; active?: boolean }) {
   return (
@@ -327,7 +335,37 @@ export function EditorPanels(p: PanelProps) {
             </label>
             {p.doc.border.enabled && (
               <>
-                <SliderRow label={`Stärke: ${p.doc.border.width}`} min={2} max={32} value={p.doc.border.width} onChange={(v) => p.setDoc((d) => ({ ...d, border: { ...d.border, width: v } }))} />
+                <div>
+                  <span className="mb-1 block text-xs font-semibold text-slate-500 dark:text-slate-400">Größe</span>
+                  <div className="flex flex-wrap gap-2">
+                    {BORDER_PRESETS.map((preset) => {
+                      const active = preset.width === 0 ? !p.doc.border.enabled || p.doc.border.width === 0 : p.doc.border.width === preset.width;
+                      return (
+                        <button
+                          key={preset.label}
+                          onClick={() =>
+                            p.setDoc((d) => ({
+                              ...d,
+                              border: {
+                                ...d.border,
+                                enabled: preset.width > 0,
+                                width: preset.width,
+                              },
+                            }))
+                          }
+                          className={`rounded-xl border-2 px-3 py-2 text-sm font-semibold active:scale-95 ${
+                            active
+                              ? 'border-emerald-500 bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30'
+                              : 'border-slate-200 text-slate-500 dark:border-slate-600 dark:text-slate-400'
+                          }`}
+                        >
+                          {preset.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                <SliderRow label={`Fein einstellen: ${p.doc.border.width}px`} min={1} max={60} value={p.doc.border.width} onChange={(v) => p.setDoc((d) => ({ ...d, border: { ...d.border, enabled: true, width: v } }))} />
                 <Swatches value={p.doc.border.color} onChange={(c) => p.setDoc((d) => ({ ...d, border: { ...d.border, color: c } }))} />
               </>
             )}
