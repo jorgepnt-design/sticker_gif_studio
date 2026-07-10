@@ -178,7 +178,7 @@ export function measureTextLayer(layer: TextLayer): { w: number; h: number; line
   return { w: maxW, h: lines.length * lineHeight, lines };
 }
 
-function drawTextLayer(ctx: CanvasRenderingContext2D, layer: TextLayer): void {
+export function drawTextLayer(ctx: CanvasRenderingContext2D, layer: TextLayer): void {
   const { lines } = measureTextLayer(layer);
   const lineHeight = layer.size * 1.2;
   ctx.save();

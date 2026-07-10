@@ -148,7 +148,7 @@ export function SettingsPage() {
       </section>
 
       <p className="mb-4 flex items-center justify-center gap-1 text-xs text-slate-400">
-        <Info className="h-3.5 w-3.5" /> Sticker &amp; GIF Studio · Version 0.1 (Phase 1)
+        <Info className="h-3.5 w-3.5" /> Sticker &amp; GIF Studio · Version 0.2 (Phase 2)
       </p>
 
       <Modal

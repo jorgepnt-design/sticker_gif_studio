@@ -1,10 +1,11 @@
 /** Export-Sheet: Format & Qualität wählen, Größe prüfen, teilen oder herunterladen */
 import { useEffect, useState } from 'react';
-import { X, Share2, Download, Loader2, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { X, Share2, Download, Loader2, AlertTriangle, CheckCircle2, Library } from 'lucide-react';
 import type { EditorDoc } from '../../lib/types';
-import { exportSticker } from '../../lib/imaging';
+import { exportSticker, uid } from '../../lib/imaging';
 import { shareOrDownload, downloadBlob, formatBytes } from '../../lib/share';
 import { loadSettings } from '../../lib/settings';
+import { saveSticker } from '../../lib/db';
 import { useToast } from '../../components/Toast';
 
 const WHATSAPP_LIMIT = 100 * 1024;
@@ -165,6 +166,31 @@ export function ExportSheet({
             <Download className="h-5 w-5" /> Speichern
           </button>
         </div>
+
+        {/* In der Sticker-Bibliothek ablegen (für Stickerpakete) */}
+        <button
+          disabled={!result || busy}
+          onClick={async () => {
+            if (!result) return;
+            try {
+              await saveSticker({
+                id: uid(),
+                name: `Sticker vom ${new Date().toLocaleDateString('de-DE')}`,
+                blob: result.blob,
+                favorite: false,
+                category: 'Allgemein',
+                createdAt: Date.now(),
+                lastUsedAt: Date.now(),
+              });
+              toast('In Bibliothek gespeichert – dort kannst du Pakete erstellen', 'success');
+            } catch {
+              toast('Speichern fehlgeschlagen', 'error');
+            }
+          }}
+          className="mb-4 flex w-full items-center justify-center gap-2 rounded-2xl bg-slate-100 py-3 font-semibold text-slate-700 active:scale-95 disabled:opacity-50 dark:bg-slate-700 dark:text-slate-200"
+        >
+          <Library className="h-5 w-5" /> In Bibliothek speichern
+        </button>
 
         {/* Anleitung für WhatsApp */}
         <div className="rounded-2xl bg-teal-50 p-4 text-xs leading-relaxed text-teal-900 dark:bg-teal-900/30 dark:text-teal-200">

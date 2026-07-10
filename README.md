@@ -4,7 +4,7 @@ Eine moderne Progressive Web App (PWA) zum Erstellen von **WhatsApp-Stickern, Me
 
 **Datenschutz zuerst:** Alle Bilder werden ausschließlich lokal auf dem Gerät verarbeitet. Kein Upload, kein Konto, kein Tracking.
 
-## ✨ Funktionen (Phase 1)
+## ✨ Funktionen (Phase 1 + 2)
 
 - **Sticker-Editor** mit Touch-Bedienung
   - Foto aus Galerie wählen oder mit der Kamera aufnehmen
@@ -22,10 +22,18 @@ Eine moderne Progressive Web App (PWA) zum Erstellen von **WhatsApp-Stickern, Me
 - **Bild-Komprimierer**: mehrere Bilder auf einmal verkleinern (JPG/WebP), mit Vorher/Nachher-Größe
 - **12 bearbeitbare Vorlagen** (Guten Morgen, Danke, Geburtstag …)
 - **Projekte**: lokal in IndexedDB gespeichert, nach Neustart wieder ladbar, umbenennen & löschen
+- **GIF-Ersteller** (Phase 2)
+  - Quellen: Video (mit Trimmen per Start/Ende-Regler und wählbarer Bildrate), GIF-Datei oder Bilderserie
+  - Richtung vorwärts / rückwärts / **Ping-Pong**, Geschwindigkeit 25–300 %
+  - Seitenverhältnisse 1:1, 9:16, 16:9, 4:5 oder frei; Größe und Farbanzahl einstellbar
+  - Text-Overlay (per Finger positionierbar), optional Hintergrund entfernen
+  - Kodierung im **Web Worker** (gifenc) mit Fortschrittsbalken und Abbrechen
+- **Animierte Sticker** (Phase 2): gleicher Ablauf mit 512-px-Voreinstellung, Warnung über 500 KB und automatischer Optimierung (weniger Farben/Frames)
+- **Sticker-Bibliothek** (Phase 2): Suche, Favoriten, Kategorien, zuletzt verwendet
+- **Stickerpakete** (Phase 2): Name & Autor, Sortierung, Mindestanzahl-Prüfung (3), Export als **ZIP** (Sticker + pack.json) zum Teilen
+- **GIF→Video-Konverter** (Phase 2): GIF als MP4/WebM speichern (MediaRecorder), Hintergrundfarbe, Auflösung, Wiederholungen
 - **Heller & dunkler Modus**, untere Navigationsleiste, komplett responsive
 - **PWA**: offline nutzbar, auf dem Home-Bildschirm installierbar
-
-Phase 2 (animierte Sticker, GIF-Erstellung, Stickerpakete) ist in der Oberfläche bereits als „Bald verfügbar“ angelegt.
 
 ## 🚀 Installation & Start
 
@@ -62,6 +70,9 @@ npm run preview
 | `tailwindcss` + `@tailwindcss/vite` | Utility-CSS-Styling |
 | `vite-plugin-pwa` | Service Worker, Manifest, Offline-Support |
 | `lucide-react` | Icon-Set |
+| `gifenc` | GIF-Kodierung (läuft im Web Worker) |
+| `gifuct-js` | GIF-Dateien in Einzelframes zerlegen |
+| `fflate` | ZIP-Erstellung für Stickerpakete |
 
 Bewusst **ohne** schwere Editor-Bibliotheken: Der Canvas-Editor (Gesten, Ebenen, Compositing) ist mit der nativen Canvas- und Pointer-Events-API umgesetzt – das hält die App klein (~70 KB gzip) und schnell auf älteren Smartphones. Die Projektspeicherung nutzt IndexedDB direkt.
 
@@ -80,13 +91,20 @@ src/
 │   ├── Templates.tsx     # Vorlagen-Galerie
 │   ├── Settings.tsx      # Theme, Export-Standards, Datenschutz, Daten löschen
 │   ├── Compress.tsx      # Bild-Komprimierer
+│   ├── GifStudio.tsx     # GIF & animierte Sticker (Trimmen, Tempo, Text, Export)
+│   ├── Gif2Mp4.tsx       # GIF→Video-Konverter (MediaRecorder)
+│   ├── Library.tsx       # Sticker-Bibliothek (Suche, Favoriten, Kategorien)
+│   ├── PackDetail.tsx    # Stickerpaket: sortieren, ZIP-Export
 │   └── editor/
 │       ├── Editor.tsx        # Editor-Kern: Canvas, Gesten, Ebenen, Undo
 │       ├── EditorPanels.tsx  # Werkzeug-Panels (Bild, Freistellen, Text, …)
 │       └── ExportSheet.tsx   # Export mit Format/Qualität/WhatsApp-Check
+├── workers/
+│   └── gif.worker.ts     # GIF-Kodierung im Hintergrund (gifenc)
 └── lib/
     ├── imaging.ts        # Medienverarbeitung: Freistellen, Rand, Compositing, Export
-    ├── db.ts             # IndexedDB-Wrapper (Projekte, Alles-löschen)
+    ├── gif.ts            # Frame-Extraktion (Video/GIF/Bilder), Sequenzen, Encoder-Anbindung
+    ├── db.ts             # IndexedDB-Wrapper (Projekte, Bibliothek, Pakete)
     ├── share.ts          # Web Share API + Download-Fallback
     ├── templates.ts      # Vorlagen, Schriftarten, Emoji-Set
     ├── settings.ts       # Einstellungen (localStorage) + Theme
@@ -109,5 +127,5 @@ src/
 
 ## 🛣️ Roadmap
 
-- **Phase 2:** Stickerpakete (ZIP-Export), animierte Sticker, GIF-Ersteller (FFmpeg.wasm), Video-Konverter, Sticker-Bibliothek
-- **Phase 3:** erweiterte Effekte, Cloud-Sync (optional), native iOS/Android-App (z. B. via Capacitor)
+- **Phase 2 ✅** Stickerpakete (ZIP-Export), animierte Sticker, GIF-Ersteller, GIF→Video-Konverter, Sticker-Bibliothek
+- **Phase 3:** erweiterte Effekte, Cloud-Sync (optional), native iOS/Android-App (z. B. via Capacitor) mit direktem WhatsApp-Sticker-Import

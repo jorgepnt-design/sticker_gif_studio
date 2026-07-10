@@ -1,5 +1,5 @@
 /** Startseite mit großen Funktionskarten */
-import { Sticker, ImagePlus, UserCircle2, FolderOpen, Laugh, FileArchive, Clapperboard, Film } from 'lucide-react';
+import { Sticker, ImagePlus, UserCircle2, FolderOpen, Laugh, FileArchive, Clapperboard, Film, Library } from 'lucide-react';
 import { navigate } from '../lib/router';
 
 const CARDS = [
@@ -9,6 +9,20 @@ const CARDS = [
     subtitle: 'Foto freistellen & für WhatsApp exportieren',
     icon: Sticker,
     gradient: 'from-emerald-400 to-teal-500',
+  },
+  {
+    to: '/gif?mode=anim',
+    title: 'Animierter Sticker',
+    subtitle: 'Aus Video, GIF oder Bilderserie',
+    icon: Clapperboard,
+    gradient: 'from-pink-400 to-rose-500',
+  },
+  {
+    to: '/gif?mode=gif',
+    title: 'GIF erstellen',
+    subtitle: 'Video kürzen & als GIF exportieren',
+    icon: Film,
+    gradient: 'from-amber-400 to-orange-500',
   },
   {
     to: '/editor?mode=meme',
@@ -39,17 +53,19 @@ const CARDS = [
     gradient: 'from-emerald-500 to-green-600',
   },
   {
+    to: '/library',
+    title: 'Sticker-Bibliothek',
+    subtitle: 'Sticker sammeln & Pakete erstellen',
+    icon: Library,
+    gradient: 'from-indigo-400 to-violet-600',
+  },
+  {
     to: '/projects',
     title: 'Meine Projekte',
     subtitle: 'Gespeicherte Arbeiten fortsetzen',
     icon: FolderOpen,
     gradient: 'from-slate-500 to-slate-700',
   },
-];
-
-const COMING_SOON = [
-  { title: 'Animierter Sticker', icon: Clapperboard },
-  { title: 'GIF erstellen', icon: Film },
 ];
 
 export function HomePage() {
@@ -81,25 +97,6 @@ export function HomePage() {
             <span className="font-bold leading-tight">{title}</span>
             <span className="mt-1 text-xs leading-snug text-slate-500 dark:text-slate-400">{subtitle}</span>
           </button>
-        ))}
-      </div>
-
-      {/* Ausblick auf Phase 2 – bewusst deaktiviert dargestellt */}
-      <h2 className="mb-2 mt-8 text-sm font-semibold uppercase tracking-wide text-slate-400">
-        Bald verfügbar
-      </h2>
-      <div className="grid grid-cols-2 gap-3 opacity-60">
-        {COMING_SOON.map(({ title, icon: Icon }) => (
-          <div
-            key={title}
-            className="flex items-center gap-3 rounded-3xl border-2 border-dashed border-slate-200 p-4 dark:border-slate-700"
-          >
-            <Icon className="h-6 w-6 text-slate-400" />
-            <div>
-              <div className="text-sm font-semibold text-slate-500 dark:text-slate-400">{title}</div>
-              <div className="text-[11px] text-slate-400">In Entwicklung</div>
-            </div>
-          </div>
         ))}
       </div>
 

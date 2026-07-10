@@ -60,6 +60,32 @@ export interface Project {
   updatedAt: number;
 }
 
+/** Gespeicherter Sticker in der Bibliothek */
+export interface LibrarySticker {
+  id: string;
+  name: string;
+  /** Fertiges Sticker-Bild (WebP/PNG/GIF, 512×512) */
+  blob: Blob;
+  favorite: boolean;
+  category: string;
+  createdAt: number;
+  /** Für „zuletzt verwendet“-Sortierung */
+  lastUsedAt: number;
+}
+
+/** Stickerpaket (WhatsApp erwartet mindestens 3 Sticker pro Paket) */
+export interface StickerPack {
+  id: string;
+  name: string;
+  author: string;
+  /** Sticker-IDs in Anzeigereihenfolge */
+  stickerIds: string[];
+  createdAt: number;
+  updatedAt: number;
+}
+
+export const STICKER_CATEGORIES = ['Allgemein', 'Lustig', 'Liebe', 'Tiere', 'Feiern', 'Sport'] as const;
+
 export interface TemplateDef {
   id: string;
   name: string;

@@ -1,13 +1,17 @@
 /** „Erstellen“-Tab: alle Werkzeuge als Liste */
-import { Sticker, ImagePlus, UserCircle2, Laugh, FileArchive, Type, ChevronRight } from 'lucide-react';
+import { Sticker, ImagePlus, UserCircle2, Laugh, FileArchive, Type, ChevronRight, Clapperboard, Film, Video, Library } from 'lucide-react';
 import { navigate } from '../lib/router';
 
 const TOOLS = [
   { to: '/editor?mode=sticker', title: 'WhatsApp-Sticker', desc: 'Foto freistellen, Rand & Text hinzufügen', icon: Sticker, color: 'text-emerald-500' },
+  { to: '/gif?mode=anim', title: 'Animierter Sticker', desc: 'Aus kurzem Video, GIF oder Bilderserie', icon: Clapperboard, color: 'text-rose-500' },
+  { to: '/gif?mode=gif', title: 'GIF erstellen', desc: 'Video → GIF mit Text, Tempo & Zuschnitt', icon: Film, color: 'text-amber-500' },
+  { to: '/gif2mp4', title: 'GIF in Video', desc: 'GIF als MP4/WebM-Video speichern', icon: Video, color: 'text-sky-500' },
   { to: '/editor?mode=sticker&text=1', title: 'Text-Sticker', desc: 'Sticker nur aus Text und Emojis', icon: Type, color: 'text-teal-500' },
   { to: '/editor?mode=meme', title: 'Meme', desc: 'Klassisches Meme mit Text oben und unten', icon: Laugh, color: 'text-violet-500' },
   { to: '/editor?mode=image', title: 'Bild bearbeiten', desc: 'Zuschneiden, drehen, freistellen', icon: ImagePlus, color: 'text-cyan-500' },
   { to: '/editor?mode=profile', title: 'Profilbild', desc: 'Rund mit farbigem Ring für WhatsApp & Co.', icon: UserCircle2, color: 'text-fuchsia-500' },
+  { to: '/library', title: 'Sticker-Bibliothek', desc: 'Sticker sammeln & Pakete für WhatsApp bauen', icon: Library, color: 'text-indigo-500' },
   { to: '/compress', title: 'Bild komprimieren', desc: 'Mehrere Bilder verkleinern', icon: FileArchive, color: 'text-green-600' },
 ];
 
