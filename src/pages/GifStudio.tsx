@@ -503,7 +503,35 @@ export function GifStudioPage({ params }: { params: URLSearchParams }) {
                 <label className="mb-1 block text-xs font-semibold text-slate-500 dark:text-slate-400">
                   Geschwindigkeit: {speed} %
                 </label>
-                <input type="range" min={25} max={300} step={5} value={speed} onChange={(e) => setSpeed(Number(e.target.value))} />
+                <input type="range" min={10} max={300} step={5} value={speed} onChange={(e) => setSpeed(Number(e.target.value))} />
+                {mode === 'anim' && (
+                  <div className="mt-2 rounded-xl bg-amber-50 p-3 text-xs text-amber-800 dark:bg-amber-900/30 dark:text-amber-200">
+                    <p className="mb-2">
+                      <strong>Sticker in WhatsApp zu schnell?</strong> WhatsApp spielt animierte Sticker oft schneller
+                      ab als das Original. Verlangsame die Animation hier zum Ausgleich:
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {[
+                        { label: 'Normal', v: 100 },
+                        { label: '½ Tempo', v: 50 },
+                        { label: '⅓ Tempo', v: 33 },
+                        { label: '¼ Tempo', v: 25 },
+                      ].map((o) => (
+                        <button
+                          key={o.v}
+                          onClick={() => setSpeed(o.v)}
+                          className={`rounded-lg border-2 px-3 py-1.5 font-semibold ${
+                            speed === o.v
+                              ? 'border-emerald-500 bg-emerald-50 text-emerald-600 dark:bg-emerald-900/40'
+                              : 'border-amber-300 text-amber-700 dark:border-amber-700 dark:text-amber-300'
+                          }`}
+                        >
+                          {o.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {mode === 'gif' && (
@@ -656,7 +684,8 @@ export function GifStudioPage({ params }: { params: URLSearchParams }) {
               <p className="mt-4 rounded-2xl bg-teal-50 p-3 text-xs leading-relaxed text-teal-900 dark:bg-teal-900/30 dark:text-teal-200">
                 <strong>Hinweis:</strong> Das GIF kann in WhatsApp direkt als Animation gesendet werden. Für echte
                 animierte Sticker-Pakete wandelt eine Sticker-Import-App (z. B. „Sticker Maker“) das GIF beim Import
-                automatisch in das WhatsApp-Format um.
+                automatisch in das WhatsApp-Format um. Spielt der Sticker in WhatsApp zu schnell? Tippe auf „Anpassen“
+                und verringere die Geschwindigkeit (z. B. auf ½ Tempo).
               </p>
             )}
           </div>
