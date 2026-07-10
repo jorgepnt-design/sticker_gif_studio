@@ -91,7 +91,7 @@ export function GifStudioPage({ params }: { params: URLSearchParams }) {
     }
     setBusy({ label: 'Video wird geladen …', progress: null });
     try {
-      const video = await loadVideo(file);
+      const video = await loadVideo(file, (label) => setBusy({ label, progress: null }));
       videoRef.current = video;
       const dur = video.duration;
       setVideoDur(dur);
