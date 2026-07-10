@@ -232,23 +232,31 @@ export function GifStudioPage({ params }: { params: URLSearchParams }) {
 
   /* ---------- Export ---------- */
 
-  const doExport = async (overrides?: { colors?: number; skip?: number }) => {
-    if (!frames?.length) return;
-    const useColors = overrides?.colors ?? colors;
-    const useSkip = overrides?.skip ?? frameSkip;
+  /** Kodiert das GIF mit konkreten Einstellungen und meldet den Fortschritt. */
+  const encodeWith = (
+    opts: { colors: number; skip: number; size: number },
+    onProgress: (v: number) => void,
+  ): { promise: Promise<Blob>; cancel: () => void } => {
     const list =
-      useSkip === 1
-        ? frames
-        : frames.filter((_, i) => i % useSkip === 0).map((f) => ({ canvas: f.canvas, delay: f.delay * useSkip }));
+      opts.skip === 1
+        ? frames!
+        : frames!.filter((_, i) => i % opts.skip === 0).map((f) => ({ canvas: f.canvas, delay: f.delay * opts.skip }));
     const seq = buildSequence(list, direction, speed / 100);
-    const dims = targetDims(frames[0].canvas.width, frames[0].canvas.height, aspect, size);
+    const dims = targetDims(frames![0].canvas.width, frames![0].canvas.height, aspect, opts.size);
+    return encodeGif(
+      seq,
+      renderFrame(removeBg),
+      { width: dims.width, height: dims.height, transparent: removeBg, maxColors: opts.colors },
+      onProgress,
+    );
+  };
+
+  const doExport = async () => {
+    if (!frames?.length) return;
     setBusy({ label: 'GIF wird erstellt …', progress: 0 });
-    const handle = encodeGif(seq, renderFrame(removeBg), {
-      width: dims.width,
-      height: dims.height,
-      transparent: removeBg,
-      maxColors: useColors,
-    }, (v) => setBusy({ label: 'GIF wird erstellt …', progress: v }));
+    const handle = encodeWith({ colors, skip: frameSkip, size }, (v) =>
+      setBusy({ label: 'GIF wird erstellt …', progress: v }),
+    );
     cancelRef.current = handle.cancel;
     try {
       const blob = await handle.promise;
@@ -263,11 +271,59 @@ export function GifStudioPage({ params }: { params: URLSearchParams }) {
     }
   };
 
-  /** Zu groß für WhatsApp? Automatisch Farben und Bildrate reduzieren. */
-  const optimize = () => {
-    setColors(64);
-    setFrameSkip(2);
-    void doExport({ colors: 64, skip: 2 });
+  /**
+   * Verkleinert das Ergebnis mit einem Klick unter die WhatsApp-Grenze (~500 KB):
+   * probiert stufenweise weniger Farben, geringere Bildrate und kleinere Maße,
+   * bis das GIF passt – oder nimmt die kleinstmögliche Variante.
+   */
+  const optimizeToLimit = async () => {
+    if (!frames?.length) return;
+    // Stufen von „kaum sichtbarer Verlust“ bis „stark komprimiert“
+    const ladder: { colors: number; skip: number; size: number }[] = [
+      { colors: 128, skip: 1, size: Math.min(size, 512) },
+      { colors: 96, skip: 1, size: 448 },
+      { colors: 64, skip: 2, size: 384 },
+      { colors: 48, skip: 2, size: 320 },
+      { colors: 32, skip: 3, size: 288 },
+      { colors: 24, skip: 4, size: 256 },
+      { colors: 16, skip: 5, size: 224 },
+    ];
+    let best: { blob: Blob; step: { colors: number; skip: number; size: number } } | null = null;
+    for (let i = 0; i < ladder.length; i++) {
+      const step = ladder[i];
+      const label = `Optimiere für WhatsApp … (Schritt ${i + 1}/${ladder.length})`;
+      setBusy({ label, progress: 0 });
+      const handle = encodeWith(step, (v) => setBusy({ label, progress: v }));
+      cancelRef.current = handle.cancel;
+      let blob: Blob;
+      try {
+        blob = await handle.promise;
+      } catch {
+        toast('Optimierung fehlgeschlagen', 'error');
+        setBusy(null);
+        cancelRef.current = null;
+        return;
+      }
+      best = { blob, step };
+      if (blob.size <= WHATSAPP_ANIM_LIMIT) break;
+    }
+    cancelRef.current = null;
+    setBusy(null);
+    if (!best) return;
+    // Regler an das gewählte Ergebnis angleichen (für „Anpassen“)
+    setColors(best.step.colors);
+    setFrameSkip(best.step.skip);
+    setSize(best.step.size);
+    if (result) URL.revokeObjectURL(result.url);
+    setResult({ blob: best.blob, url: URL.createObjectURL(best.blob) });
+    if (best.blob.size <= WHATSAPP_ANIM_LIMIT) {
+      toast(`Fertig: ${formatBytes(best.blob.size)} – passt als WhatsApp-Sticker`, 'success');
+    } else {
+      toast(
+        `Kleinstmöglich: ${formatBytes(best.blob.size)}. Für noch kleiner das Video kürzen oder Tempo erhöhen.`,
+        'info',
+      );
+    }
   };
 
   const saveToLibrary = async () => {
@@ -560,10 +616,10 @@ export function GifStudioPage({ params }: { params: URLSearchParams }) {
 
             {mode === 'anim' && result.blob.size > WHATSAPP_ANIM_LIMIT && (
               <button
-                onClick={optimize}
+                onClick={() => void optimizeToLimit()}
                 className="mb-3 flex w-full items-center justify-center gap-2 rounded-2xl bg-amber-500 py-3 font-bold text-white shadow active:scale-95"
               >
-                <RefreshCcw className="h-5 w-5" /> Automatisch optimieren
+                <RefreshCcw className="h-5 w-5" /> Auf unter 500 KB verkleinern
               </button>
             )}
 
