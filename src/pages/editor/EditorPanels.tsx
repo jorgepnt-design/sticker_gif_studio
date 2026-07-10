@@ -197,6 +197,15 @@ export function EditorPanels(p: PanelProps) {
         {p.tab === 'filter' && p.hasImage && (
           <div className="space-y-3">
             <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => {
+                  p.setDoc((d) => ({ ...d, adjust: { ...NEUTRAL_ADJUST } }));
+                  p.onResetImage();
+                }}
+                className="rounded-xl bg-emerald-500 px-3 py-2 text-sm font-semibold text-white active:scale-95"
+              >
+                Original
+              </button>
               {FILTER_PRESETS.map((f) => (
                 <button
                   key={f.id}
