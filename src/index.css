@@ -1,0 +1,90 @@
+@import 'tailwindcss';
+
+/* Dunkelmodus über .dark-Klasse am <html>-Element steuern */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --color-brand-50: #ecfdf5;
+  --color-brand-100: #d1fae5;
+  --color-brand-200: #a7f3d0;
+  --color-brand-300: #6ee7b7;
+  --color-brand-400: #34d399;
+  --color-brand-500: #10b981;
+  --color-brand-600: #059669;
+  --color-brand-700: #047857;
+  --color-teal-450: #14b8a6;
+  --color-violet-450: #8b5cf6;
+}
+
+html,
+body {
+  height: 100%;
+  overscroll-behavior-y: none;
+  -webkit-tap-highlight-color: transparent;
+  font-family:
+    ui-rounded,
+    'SF Pro Rounded',
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    sans-serif;
+}
+
+body {
+  @apply bg-slate-50 text-slate-900 dark:bg-[#0d1117] dark:text-slate-100;
+}
+
+/* iPhone-Notch / Home-Indicator berücksichtigen */
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.safe-top {
+  padding-top: env(safe-area-inset-top);
+}
+
+/* Schachbrettmuster für transparente Bereiche */
+.checkerboard {
+  background-image:
+    linear-gradient(45deg, rgba(128, 128, 128, 0.18) 25%, transparent 25%),
+    linear-gradient(-45deg, rgba(128, 128, 128, 0.18) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, rgba(128, 128, 128, 0.18) 75%),
+    linear-gradient(-45deg, transparent 75%, rgba(128, 128, 128, 0.18) 75%);
+  background-size: 20px 20px;
+  background-position:
+    0 0,
+    0 10px,
+    10px -10px,
+    -10px 0;
+}
+
+/* Slider-Styling (Touch-freundlich) */
+input[type='range'] {
+  @apply h-2 w-full cursor-pointer appearance-none rounded-full bg-slate-200 accent-emerald-500 dark:bg-slate-700;
+}
+input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  @apply h-6 w-6 rounded-full border-2 border-white bg-emerald-500 shadow-md;
+}
+
+/* Sanftes Einblenden von Seiten */
+@keyframes page-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.page-in {
+  animation: page-in 0.25s ease-out;
+}
+
+/* Kein Textmarkieren beim Ziehen auf dem Canvas */
+.no-select {
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+}
