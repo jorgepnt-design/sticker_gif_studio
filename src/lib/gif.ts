@@ -16,6 +16,20 @@ export type Direction = 'forward' | 'reverse' | 'pingpong';
 /** Obergrenze, damit Speicher und Kodierzeit auf Smartphones beherrschbar bleiben */
 export const MAX_FRAMES = 150;
 export const MAX_VIDEO_BYTES = 120 * 1024 * 1024;
+const VIDEO_LOAD_TIMEOUT_MS = 20_000;
+const VIDEO_SEEK_TIMEOUT_MS = 10_000;
+
+function cleanupVideoListeners(
+  video: HTMLVideoElement,
+  events: string[],
+  onReady: () => void,
+  onError: () => void,
+  timer: number,
+) {
+  for (const event of events) video.removeEventListener(event, onReady);
+  video.removeEventListener('error', onError);
+  clearTimeout(timer);
+}
 
 /* ---------- Quellen laden ---------- */
 
@@ -26,24 +40,75 @@ export function loadVideo(file: Blob): Promise<HTMLVideoElement> {
     video.preload = 'metadata';
     video.muted = true;
     video.playsInline = true;
-    video.src = URL.createObjectURL(file);
-    video.onloadedmetadata = () => resolve(video);
-    video.onerror = () => reject(new Error('Video konnte nicht gelesen werden'));
+    video.controls = false;
+    const src = URL.createObjectURL(file);
+    const readyEvents = ['loadedmetadata', 'durationchange', 'loadeddata', 'canplay'];
+
+    const isReady = () =>
+      Number.isFinite(video.duration) &&
+      video.duration > 0 &&
+      video.videoWidth > 0 &&
+      video.videoHeight > 0;
+
+    const finish = () => {
+      if (!isReady()) return;
+      cleanupVideoListeners(video, readyEvents, finish, fail, timer);
+      resolve(video);
+    };
+
+    const fail = () => {
+      cleanupVideoListeners(video, readyEvents, finish, fail, timer);
+      URL.revokeObjectURL(src);
+      reject(new Error('Video konnte nicht gelesen werden'));
+    };
+
+    const timer = window.setTimeout(fail, VIDEO_LOAD_TIMEOUT_MS);
+    for (const event of readyEvents) video.addEventListener(event, finish);
+    video.addEventListener('error', fail);
+    video.src = src;
+
+    try {
+      video.load();
+    } catch {
+      fail();
+    }
   });
 }
 
 /** Ein Einzelbild aus dem Video an Position `time` holen (für Vorschau/Trim) */
 export function grabVideoFrame(video: HTMLVideoElement, time: number): Promise<HTMLCanvasElement> {
   return new Promise((resolve, reject) => {
-    const onSeeked = () => {
+    let settled = false;
+    const cleanup = () => {
       video.removeEventListener('seeked', onSeeked);
+      video.removeEventListener('loadeddata', onSeeked);
+      video.removeEventListener('error', onError);
+      clearTimeout(timer);
+    };
+    const onSeeked = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
       const c = createCanvas(video.videoWidth, video.videoHeight);
       ctx2d(c).drawImage(video, 0, 0);
       resolve(c);
     };
+    const onError = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(new Error('Video-Fehler'));
+    };
+    const timer = window.setTimeout(onError, VIDEO_SEEK_TIMEOUT_MS);
+    const targetTime = Math.min(time, Math.max(0, video.duration - 0.05));
     video.addEventListener('seeked', onSeeked);
-    video.onerror = () => reject(new Error('Video-Fehler'));
-    video.currentTime = Math.min(time, Math.max(0, video.duration - 0.05));
+    video.addEventListener('loadeddata', onSeeked);
+    video.addEventListener('error', onError);
+    if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && Math.abs(video.currentTime - targetTime) < 0.02) {
+      requestAnimationFrame(onSeeked);
+    } else {
+      video.currentTime = targetTime;
+    }
   });
 }
 
@@ -76,16 +141,37 @@ export async function extractVideoFrames(
     const t = start + i * step;
     if (t >= end) break;
     await new Promise<void>((resolve, reject) => {
-      const onSeeked = () => {
+      let settled = false;
+      const cleanup = () => {
         video.removeEventListener('seeked', onSeeked);
+        video.removeEventListener('loadeddata', onSeeked);
+        video.removeEventListener('error', onError);
+        clearTimeout(timer);
+      };
+      const onSeeked = () => {
+        if (settled) return;
+        settled = true;
+        cleanup();
         const c = createCanvas(w, h);
         ctx2d(c).drawImage(video, 0, 0, w, h);
         frames.push({ canvas: c, delay });
         resolve();
       };
+      const onError = () => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        reject(new Error('Video-Fehler beim Lesen'));
+      };
+      const timer = window.setTimeout(onError, VIDEO_SEEK_TIMEOUT_MS);
       video.addEventListener('seeked', onSeeked);
-      video.onerror = () => reject(new Error('Video-Fehler beim Lesen'));
-      video.currentTime = t;
+      video.addEventListener('loadeddata', onSeeked);
+      video.addEventListener('error', onError);
+      if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && Math.abs(video.currentTime - t) < 0.02) {
+        requestAnimationFrame(onSeeked);
+      } else {
+        video.currentTime = t;
+      }
     });
     onProgress((i + 1) / (total + 1));
   }

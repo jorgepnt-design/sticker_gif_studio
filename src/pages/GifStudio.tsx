@@ -101,8 +101,8 @@ export function GifStudioPage({ params }: { params: URLSearchParams }) {
         toast('Für WhatsApp sollten animierte Sticker kurz sein – wähle einen Ausschnitt.', 'info');
       }
       setStep('trim');
-    } catch {
-      toast('Video konnte nicht gelesen werden', 'error');
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Video konnte nicht gelesen werden', 'error');
     } finally {
       setBusy(null);
     }
@@ -608,7 +608,7 @@ export function GifStudioPage({ params }: { params: URLSearchParams }) {
       </div>
 
       {/* Versteckte Datei-Eingaben */}
-      <input ref={videoInput} type="file" accept="video/*" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) void pickVideo(f); e.target.value = ''; }} />
+      <input ref={videoInput} type="file" accept="video/*,.mov,.mp4,.m4v,.quicktime" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) void pickVideo(f); e.target.value = ''; }} />
       <input ref={gifInput} type="file" accept="image/gif" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) void pickGif(f); e.target.value = ''; }} />
       <input ref={imagesInput} type="file" accept="image/*" multiple hidden onChange={(e) => { const f = e.target.files; if (f?.length) void pickImages(Array.from(f)); e.target.value = ''; }} />
 
