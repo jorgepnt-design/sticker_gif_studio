@@ -4,7 +4,7 @@ Eine moderne Progressive Web App (PWA) zum Erstellen von **WhatsApp-Stickern, Me
 
 **Datenschutz zuerst:** Alle Bilder werden ausschließlich lokal auf dem Gerät verarbeitet. Kein Upload, kein Konto, kein Tracking.
 
-## ✨ Funktionen (Phase 1 + 2)
+## ✨ Funktionen (Phase 1–3)
 
 - **Sticker-Editor** mit Touch-Bedienung
   - Foto aus Galerie wählen oder mit der Kamera aufnehmen
@@ -32,6 +32,14 @@ Eine moderne Progressive Web App (PWA) zum Erstellen von **WhatsApp-Stickern, Me
 - **Sticker-Bibliothek** (Phase 2): Suche, Favoriten, Kategorien, zuletzt verwendet
 - **Stickerpakete** (Phase 2): Name & Autor, Sortierung, Mindestanzahl-Prüfung (3), Export als **ZIP** (Sticker + pack.json) zum Teilen
 - **GIF→Video-Konverter** (Phase 2): GIF als MP4/WebM speichern (MediaRecorder), Hintergrundfarbe, Auflösung, Wiederholungen
+- **Erweiterte Effekte** (Phase 3)
+  - Nicht-destruktive Anpassungen: Helligkeit, Kontrast, Sättigung, Farbtemperatur
+  - Filter: Schwarz-Weiß, Sepia, Invertieren, Cartoon, Comic, Pixel, Unschärfe, Schärfen (Undo-fähig)
+  - Schlagschatten mit Weichheit und Versatz
+  - **Freihand-Zeichnen** mit Stift, Radierer, Farbe und Stiftgröße (wird im Projekt mitgespeichert)
+  - **Vorher/Nachher**: Auge-Symbol gedrückt halten zeigt das Original
+  - Export zusätzlich als **JPG** (mit weißem Hintergrund)
+- **Sicherung & Übertragung** (Phase 3): alle Projekte, Sticker und Pakete als Datei exportieren und auf einem anderen Gerät wiederherstellen – die lokale Vorstufe zur optionalen Cloud-Synchronisierung
 - **Heller & dunkler Modus**, untere Navigationsleiste, komplett responsive
 - **PWA**: offline nutzbar, auf dem Home-Bildschirm installierbar
 
@@ -128,4 +136,5 @@ src/
 ## 🛣️ Roadmap
 
 - **Phase 2 ✅** Stickerpakete (ZIP-Export), animierte Sticker, GIF-Ersteller, GIF→Video-Konverter, Sticker-Bibliothek
-- **Phase 3:** erweiterte Effekte, Cloud-Sync (optional), native iOS/Android-App (z. B. via Capacitor) mit direktem WhatsApp-Sticker-Import
+- **Phase 3 ✅** erweiterte Effekte (Anpassungen, Filter, Schatten, Zeichnen, Vorher/Nachher), JPG-Export, lokale Sicherung/Übertragung
+- **Ausblick:** optionale Cloud-Synchronisierung mit Benutzerkonto (z. B. Supabase), native iOS/Android-App (z. B. via Capacitor) mit direktem WhatsApp-Sticker-Import

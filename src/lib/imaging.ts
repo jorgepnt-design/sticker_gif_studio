@@ -2,7 +2,7 @@
  * Medienverarbeitung: Laden, Freistellen, Rand, Compositing und Export.
  * Alles läuft lokal im Browser über die Canvas API – keine Uploads.
  */
-import type { EditorDoc, TextLayer } from './types';
+import type { EditorDoc, TextLayer, Adjustments } from './types';
 
 /** Logische Arbeitsfläche (WhatsApp-Sticker sind 512×512) */
 export const WORLD = 512;
@@ -164,6 +164,195 @@ export function brushStroke(
   ctx.restore();
 }
 
+/* ---------- Anpassungen (Helligkeit, Kontrast, Sättigung, Wärme) ---------- */
+
+export const NEUTRAL_ADJUST: Adjustments = { brightness: 100, contrast: 100, saturation: 100, temperature: 0 };
+
+export function isNeutralAdjust(a?: Adjustments): boolean {
+  return !a || (a.brightness === 100 && a.contrast === 100 && a.saturation === 100 && a.temperature === 0);
+}
+
+/**
+ * Wendet die Anpassungen auf eine Kopie des Bildes an (nicht-destruktiv).
+ * Uint8ClampedArray übernimmt das Begrenzen auf 0–255 automatisch.
+ */
+export function applyAdjustments(src: HTMLCanvasElement, a: Adjustments): HTMLCanvasElement {
+  if (isNeutralAdjust(a)) return src;
+  const out = cloneCanvas(src);
+  const ctx = ctx2d(out);
+  const img = ctx.getImageData(0, 0, out.width, out.height);
+  const d = img.data;
+  const bright = a.brightness / 100;
+  const contrast = a.contrast / 100;
+  const sat = a.saturation / 100;
+  const temp = a.temperature;
+  for (let i = 0; i < d.length; i += 4) {
+    let r = d[i] * bright;
+    let g = d[i + 1] * bright;
+    let b = d[i + 2] * bright;
+    r = (r - 128) * contrast + 128 + temp;
+    g = (g - 128) * contrast + 128;
+    b = (b - 128) * contrast + 128 - temp;
+    if (sat !== 1) {
+      const l = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+      r = l + (r - l) * sat;
+      g = l + (g - l) * sat;
+      b = l + (b - l) * sat;
+    }
+    d[i] = r;
+    d[i + 1] = g;
+    d[i + 2] = b;
+  }
+  ctx.putImageData(img, 0, 0);
+  return out;
+}
+
+/* ---------- Filter-Presets (destruktiv, aber Undo-fähig) ---------- */
+
+export type FilterPreset = 'sw' | 'sepia' | 'invert' | 'pixel' | 'blur' | 'sharpen' | 'cartoon' | 'comic';
+
+const clampIdx = (v: number, lo: number, hi: number) => (v < lo ? lo : v > hi ? hi : v);
+
+function blurAxis(src: Uint8ClampedArray, dst: Uint8ClampedArray, w: number, h: number, r: number, horizontal: boolean): void {
+  const len = horizontal ? w : h;
+  const lines = horizontal ? h : w;
+  const div = 2 * r + 1;
+  for (let line = 0; line < lines; line++) {
+    for (let ch = 0; ch < 4; ch++) {
+      const idx = horizontal
+        ? (i: number) => (line * w + i) * 4 + ch
+        : (i: number) => (i * w + line) * 4 + ch;
+      let sum = 0;
+      for (let i = -r; i <= r; i++) sum += src[idx(clampIdx(i, 0, len - 1))];
+      for (let i = 0; i < len; i++) {
+        dst[idx(i)] = sum / div;
+        sum += src[idx(clampIdx(i + r + 1, 0, len - 1))] - src[idx(clampIdx(i - r, 0, len - 1))];
+      }
+    }
+  }
+}
+
+/** Schneller separierbarer Box-Blur (in place) */
+export function boxBlurCanvas(canvas: HTMLCanvasElement, radius: number, passes = 2): void {
+  const ctx = ctx2d(canvas);
+  const { width: w, height: h } = canvas;
+  const img = ctx.getImageData(0, 0, w, h);
+  const tmp = new Uint8ClampedArray(img.data.length);
+  const r = Math.max(1, Math.round(radius));
+  for (let p = 0; p < passes; p++) {
+    blurAxis(img.data, tmp, w, h, r, true);
+    blurAxis(tmp, img.data, w, h, r, false);
+  }
+  ctx.putImageData(img, 0, 0);
+}
+
+function posterize(d: Uint8ClampedArray, levels: number): void {
+  const step = 255 / (levels - 1);
+  for (let i = 0; i < d.length; i += 4) {
+    d[i] = Math.round(d[i] / step) * step;
+    d[i + 1] = Math.round(d[i + 1] / step) * step;
+    d[i + 2] = Math.round(d[i + 2] / step) * step;
+  }
+}
+
+export function applyFilterPreset(canvas: HTMLCanvasElement, preset: FilterPreset): void {
+  const ctx = ctx2d(canvas);
+  const { width: w, height: h } = canvas;
+
+  if (preset === 'pixel') {
+    const block = Math.max(4, Math.round(w / 48));
+    const sw = Math.max(1, Math.round(w / block));
+    const sh = Math.max(1, Math.round(h / block));
+    const small = createCanvas(sw, sh);
+    ctx2d(small).drawImage(canvas, 0, 0, sw, sh);
+    ctx.clearRect(0, 0, w, h);
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(small, 0, 0, w, h);
+    ctx.imageSmoothingEnabled = true;
+    return;
+  }
+  if (preset === 'blur') {
+    boxBlurCanvas(canvas, Math.max(2, Math.round(w / 150)));
+    return;
+  }
+  if (preset === 'sharpen') {
+    // Unscharf maskieren: Original + (Original − Weichzeichnung) × Stärke
+    const blurred = cloneCanvas(canvas);
+    boxBlurCanvas(blurred, 2, 1);
+    const img = ctx.getImageData(0, 0, w, h);
+    const bd = ctx2d(blurred).getImageData(0, 0, w, h).data;
+    const d = img.data;
+    for (let i = 0; i < d.length; i += 4) {
+      d[i] += (d[i] - bd[i]) * 0.8;
+      d[i + 1] += (d[i + 1] - bd[i + 1]) * 0.8;
+      d[i + 2] += (d[i + 2] - bd[i + 2]) * 0.8;
+    }
+    ctx.putImageData(img, 0, 0);
+    return;
+  }
+  if (preset === 'cartoon') {
+    boxBlurCanvas(canvas, Math.max(1, Math.round(w / 400)), 1);
+    const img = ctx.getImageData(0, 0, w, h);
+    posterize(img.data, 5);
+    // Farben leicht anheben für den Comic-Look
+    const d = img.data;
+    for (let i = 0; i < d.length; i += 4) {
+      const l = 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
+      d[i] = l + (d[i] - l) * 1.3;
+      d[i + 1] = l + (d[i + 1] - l) * 1.3;
+      d[i + 2] = l + (d[i + 2] - l) * 1.3;
+    }
+    ctx.putImageData(img, 0, 0);
+    return;
+  }
+  if (preset === 'comic') {
+    const img = ctx.getImageData(0, 0, w, h);
+    const d = img.data;
+    // Helligkeit vor dem Posterisieren merken (für die Kantenerkennung)
+    const lum = new Float32Array(w * h);
+    for (let p = 0; p < w * h; p++) {
+      lum[p] = 0.2126 * d[p * 4] + 0.7152 * d[p * 4 + 1] + 0.0722 * d[p * 4 + 2];
+    }
+    posterize(d, 4);
+    for (let y = 0; y < h - 1; y++) {
+      for (let x = 0; x < w - 1; x++) {
+        const p = y * w + x;
+        if (Math.abs(lum[p] - lum[p + 1]) + Math.abs(lum[p] - lum[p + w]) > 42 && d[p * 4 + 3] > 0) {
+          d[p * 4] = 25;
+          d[p * 4 + 1] = 25;
+          d[p * 4 + 2] = 25;
+        }
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+    return;
+  }
+
+  // Pixelweise Filter: Schwarz-Weiß, Sepia, Invertieren
+  const img = ctx.getImageData(0, 0, w, h);
+  const d = img.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const r = d[i];
+    const g = d[i + 1];
+    const b = d[i + 2];
+    if (preset === 'sw') {
+      const l = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+      d[i] = l;
+      d[i + 1] = l;
+      d[i + 2] = l;
+    } else if (preset === 'sepia') {
+      d[i] = 0.393 * r + 0.769 * g + 0.189 * b;
+      d[i + 1] = 0.349 * r + 0.686 * g + 0.168 * b;
+      d[i + 2] = 0.272 * r + 0.534 * g + 0.131 * b;
+    } else if (preset === 'invert') {
+      d[i] = 255 - r;
+      d[i + 1] = 255 - g;
+      d[i + 2] = 255 - b;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+}
+
 /** Zeilenumbrüche berücksichtigen und Text-Ausmaße bestimmen */
 export function measureTextLayer(layer: TextLayer): { w: number; h: number; lines: string[] } {
   const lines = layer.text.split('\n');
@@ -223,6 +412,7 @@ export function composeDoc(
   doc: EditorDoc,
   image: HTMLCanvasElement | null,
   quality: 'fast' | 'high' = 'high',
+  drawing?: HTMLCanvasElement | null,
 ): void {
   const size = target.width; // quadratisch
   const scale = size / WORLD;
@@ -231,12 +421,13 @@ export function composeDoc(
   ctx.save();
   ctx.scale(scale, scale);
 
-  // Inhalt (Bild + Ebenen) einmal offscreen rendern
+  // Inhalt (Bild + Zeichnung + Ebenen) einmal offscreen rendern
   const content = createCanvas(size, size);
   const cctx = ctx2d(content);
   cctx.save();
   cctx.scale(scale, scale);
   if (doc.image && image) drawImageLayer(cctx, doc, image);
+  if (drawing) cctx.drawImage(drawing, 0, 0);
   for (const layer of doc.layers) drawTextLayer(cctx, layer);
   cctx.restore();
 
@@ -270,8 +461,19 @@ export function composeDoc(
     ctx.restore();
   }
 
-  // 3) Inhalt oben drauf
-  ctx.drawImage(content, 0, 0, WORLD, WORLD);
+  // 3) Inhalt oben drauf – optional mit Schlagschatten
+  if (doc.shadow?.enabled) {
+    ctx.save();
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.45)';
+    // Schatten-Attribute wirken im Geräte-Raum, daher mitskalieren
+    ctx.shadowBlur = doc.shadow.blur * scale;
+    ctx.shadowOffsetX = doc.shadow.offset * scale;
+    ctx.shadowOffsetY = doc.shadow.offset * scale;
+    ctx.drawImage(content, 0, 0, WORLD, WORLD);
+    ctx.restore();
+  } else {
+    ctx.drawImage(content, 0, 0, WORLD, WORLD);
+  }
 
   // 4) Runde Maske (Profilbild-Modus) + optionaler farbiger Ring
   if (doc.round) {
@@ -317,12 +519,22 @@ export function encodeCanvas(
 export async function exportSticker(
   doc: EditorDoc,
   image: HTMLCanvasElement | null,
-  format: 'png' | 'webp',
+  drawing: HTMLCanvasElement | null,
+  format: 'png' | 'webp' | 'jpeg',
   quality: number,
   optimizeForWhatsApp: boolean,
 ): Promise<{ blob: Blob; actualFormat: string }> {
-  const out = createCanvas(WORLD, WORLD);
-  composeDoc(out, doc, image, 'high');
+  let out = createCanvas(WORLD, WORLD);
+  composeDoc(out, doc, image, 'high', drawing);
+  if (format === 'jpeg') {
+    // JPG kennt keine Transparenz → weiß unterlegen
+    const flat = createCanvas(WORLD, WORLD);
+    const fctx = ctx2d(flat);
+    fctx.fillStyle = '#ffffff';
+    fctx.fillRect(0, 0, WORLD, WORLD);
+    fctx.drawImage(out, 0, 0);
+    out = flat;
+  }
   let blob = await encodeCanvas(out, format, quality);
   // Safari < 17 kann kein WebP kodieren und liefert stattdessen PNG
   const actualFormat = blob.type.replace('image/', '');
@@ -337,9 +549,13 @@ export async function exportSticker(
 }
 
 /** Kleine Vorschau für die Projektliste erzeugen */
-export function makeThumbnail(doc: EditorDoc, image: HTMLCanvasElement | null): Promise<Blob> {
+export function makeThumbnail(
+  doc: EditorDoc,
+  image: HTMLCanvasElement | null,
+  drawing?: HTMLCanvasElement | null,
+): Promise<Blob> {
   const c = createCanvas(160, 160);
-  composeDoc(c, doc, image, 'fast');
+  composeDoc(c, doc, image, 'fast', drawing);
   return encodeCanvas(c, 'png', 0.9);
 }
 

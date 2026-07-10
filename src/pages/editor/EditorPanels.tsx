@@ -18,11 +18,14 @@ import {
   Trash2,
   Pencil,
   Plus,
+  Sparkles,
+  Brush,
 } from 'lucide-react';
 import type { EditorDoc, TextLayer } from '../../lib/types';
 import { FONTS, EMOJI_SET } from '../../lib/templates';
+import { NEUTRAL_ADJUST, type FilterPreset } from '../../lib/imaging';
 
-export type Tab = 'image' | 'cutout' | 'text' | 'emoji' | 'border' | 'bg';
+export type Tab = 'image' | 'cutout' | 'filter' | 'draw' | 'text' | 'emoji' | 'border' | 'bg';
 
 export const COLORS = [
   '#ffffff', '#111827', '#ef4444', '#f97316', '#facc15',
@@ -34,8 +37,8 @@ export interface PanelProps {
   setDoc: (updater: (d: EditorDoc) => EditorDoc) => void;
   tab: Tab;
   setTab: (t: Tab) => void;
-  tool: 'move' | 'erase' | 'restore';
-  setTool: (t: 'move' | 'erase' | 'restore') => void;
+  tool: 'move' | 'erase' | 'restore' | 'draw' | 'drawErase';
+  setTool: (t: 'move' | 'erase' | 'restore' | 'draw' | 'drawErase') => void;
   brushSize: number;
   setBrushSize: (n: number) => void;
   tolerance: number;
@@ -53,15 +56,34 @@ export interface PanelProps {
   rotate: (dir: 1 | -1) => void;
   flip: (axis: 'x' | 'y') => void;
   fitImage: (cover: boolean) => void;
+  drawColor: string;
+  setDrawColor: (c: string) => void;
+  drawSize: number;
+  setDrawSize: (n: number) => void;
+  onClearDrawing: () => void;
+  onApplyFilter: (preset: FilterPreset) => void;
 }
 
 const TABS: { id: Tab; label: string; icon: typeof ImageIcon; needsImage?: boolean }[] = [
   { id: 'image', label: 'Bild', icon: ImageIcon, needsImage: true },
   { id: 'cutout', label: 'Freistellen', icon: Scissors, needsImage: true },
+  { id: 'filter', label: 'Filter', icon: Sparkles, needsImage: true },
+  { id: 'draw', label: 'Malen', icon: Brush },
   { id: 'text', label: 'Text', icon: Type },
   { id: 'emoji', label: 'Emoji', icon: Smile },
   { id: 'border', label: 'Rand', icon: Square },
   { id: 'bg', label: 'Fläche', icon: PaintBucket },
+];
+
+const FILTER_PRESETS: { id: FilterPreset; label: string }[] = [
+  { id: 'sw', label: 'S/W' },
+  { id: 'sepia', label: 'Sepia' },
+  { id: 'invert', label: 'Invertiert' },
+  { id: 'cartoon', label: 'Cartoon' },
+  { id: 'comic', label: 'Comic' },
+  { id: 'pixel', label: 'Pixel' },
+  { id: 'blur', label: 'Unschärfe' },
+  { id: 'sharpen', label: 'Schärfen' },
 ];
 
 /** Kleine Hilfskomponenten */
@@ -163,6 +185,65 @@ export function EditorPanels(p: PanelProps) {
           </div>
         )}
 
+        {p.tab === 'filter' && p.hasImage && (
+          <div className="space-y-3">
+            <div className="flex flex-wrap gap-2">
+              {FILTER_PRESETS.map((f) => (
+                <button
+                  key={f.id}
+                  onClick={() => p.onApplyFilter(f.id)}
+                  className="rounded-xl bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-600 active:scale-95 dark:bg-slate-700 dark:text-slate-300"
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-slate-400">Filter wirken auf das Bild und lassen sich über ↶ rückgängig machen.</p>
+            <SliderRow
+              label={`Helligkeit: ${p.doc.adjust.brightness} %`}
+              min={20} max={200} value={p.doc.adjust.brightness}
+              onChange={(v) => p.setDoc((d) => ({ ...d, adjust: { ...d.adjust, brightness: v } }))}
+            />
+            <SliderRow
+              label={`Kontrast: ${p.doc.adjust.contrast} %`}
+              min={20} max={200} value={p.doc.adjust.contrast}
+              onChange={(v) => p.setDoc((d) => ({ ...d, adjust: { ...d.adjust, contrast: v } }))}
+            />
+            <SliderRow
+              label={`Sättigung: ${p.doc.adjust.saturation} %`}
+              min={0} max={200} value={p.doc.adjust.saturation}
+              onChange={(v) => p.setDoc((d) => ({ ...d, adjust: { ...d.adjust, saturation: v } }))}
+            />
+            <SliderRow
+              label={`Farbtemperatur: ${p.doc.adjust.temperature > 0 ? '+' : ''}${p.doc.adjust.temperature}`}
+              min={-50} max={50} value={p.doc.adjust.temperature}
+              onChange={(v) => p.setDoc((d) => ({ ...d, adjust: { ...d.adjust, temperature: v } }))}
+            />
+            <button
+              onClick={() => p.setDoc((d) => ({ ...d, adjust: { ...NEUTRAL_ADJUST } }))}
+              className="rounded-xl bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-600 active:scale-95 dark:bg-slate-700 dark:text-slate-300"
+            >
+              Anpassungen zurücksetzen
+            </button>
+          </div>
+        )}
+
+        {p.tab === 'draw' && (
+          <div className="space-y-3">
+            <div className="flex flex-wrap gap-2">
+              <ToolButton label="Stift" icon={Brush} active={p.tool === 'draw'} onClick={() => p.setTool('draw')} />
+              <ToolButton label="Radierer" icon={Eraser} active={p.tool === 'drawErase'} onClick={() => p.setTool('drawErase')} />
+              <ToolButton label="Alles löschen" icon={Trash2} onClick={p.onClearDrawing} />
+            </div>
+            <SliderRow label={`Stiftgröße: ${p.drawSize}`} min={2} max={40} value={p.drawSize} onChange={p.setDrawSize} />
+            <div>
+              <span className="mb-1 block text-xs font-semibold text-slate-500 dark:text-slate-400">Stiftfarbe</span>
+              <Swatches value={p.drawColor} onChange={p.setDrawColor} />
+            </div>
+            <p className="text-xs text-slate-400">Zeichne direkt mit dem Finger auf die Fläche.</p>
+          </div>
+        )}
+
         {p.tab === 'text' && (
           <div className="space-y-3">
             <div className="flex flex-wrap gap-2">
@@ -249,6 +330,29 @@ export function EditorPanels(p: PanelProps) {
                 <Swatches value={p.doc.border.color} onChange={(c) => p.setDoc((d) => ({ ...d, border: { ...d.border, color: c } }))} />
               </>
             )}
+            <label className="flex items-center justify-between border-t border-slate-100 pt-3 dark:border-slate-700">
+              <span className="font-semibold">Schatten</span>
+              <input
+                type="checkbox"
+                checked={p.doc.shadow.enabled}
+                onChange={(e) => p.setDoc((d) => ({ ...d, shadow: { ...d.shadow, enabled: e.target.checked } }))}
+                className="h-6 w-6 accent-emerald-500"
+              />
+            </label>
+            {p.doc.shadow.enabled && (
+              <>
+                <SliderRow
+                  label={`Weichheit: ${p.doc.shadow.blur}`}
+                  min={0} max={30} value={p.doc.shadow.blur}
+                  onChange={(v) => p.setDoc((d) => ({ ...d, shadow: { ...d.shadow, blur: v } }))}
+                />
+                <SliderRow
+                  label={`Versatz: ${p.doc.shadow.offset}`}
+                  min={0} max={24} value={p.doc.shadow.offset}
+                  onChange={(v) => p.setDoc((d) => ({ ...d, shadow: { ...d.shadow, offset: v } }))}
+                />
+              </>
+            )}
           </div>
         )}
 
@@ -280,16 +384,16 @@ export function EditorPanels(p: PanelProps) {
         )}
       </div>
 
-      {/* Tab-Leiste */}
-      <div className="flex justify-around border-t border-slate-100 dark:border-slate-800">
+      {/* Tab-Leiste (bei vielen Werkzeugen horizontal scrollbar) */}
+      <div className="flex overflow-x-auto border-t border-slate-100 dark:border-slate-800">
         {TABS.filter((t) => !t.needsImage || p.hasImage).map(({ id, label, icon: Icon }) => (
           <button
             key={id}
             onClick={() => p.setTab(id)}
-            className="flex min-w-0 flex-1 flex-col items-center gap-0.5 py-2"
+            className="flex min-w-[64px] flex-1 flex-col items-center gap-0.5 py-2"
           >
             <Icon className={`h-5 w-5 ${p.tab === id ? 'text-emerald-500' : 'text-slate-400'}`} />
-            <span className={`text-[10px] font-medium ${p.tab === id ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'}`}>
+            <span className={`whitespace-nowrap text-[10px] font-medium ${p.tab === id ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'}`}>
               {label}
             </span>
           </button>

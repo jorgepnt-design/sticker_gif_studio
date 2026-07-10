@@ -16,6 +16,7 @@ import {
   Camera,
   Type as TypeIcon,
   Loader2,
+  Eye,
 } from 'lucide-react';
 import { navigate } from '../../lib/router';
 import { useToast } from '../../components/Toast';
@@ -35,6 +36,12 @@ import {
   encodeCanvas,
   uid,
   ctx2d,
+  createCanvas,
+  applyAdjustments,
+  isNeutralAdjust,
+  NEUTRAL_ADJUST,
+  applyFilterPreset,
+  type FilterPreset,
 } from '../../lib/imaging';
 import { getProject, saveProject } from '../../lib/db';
 import { TEMPLATES, FONTS } from '../../lib/templates';
@@ -56,6 +63,8 @@ function defaultDoc(mode: EditorMode): EditorDoc {
       color: mode === 'profile' ? '#10b981' : '#ffffff',
       width: mode === 'profile' ? 16 : 10,
     },
+    shadow: { enabled: false, blur: 8, offset: 4 },
+    adjust: { ...NEUTRAL_ADJUST },
     image: null,
     layers: [],
     round: mode === 'profile',
@@ -103,6 +112,7 @@ const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v
 
 type Gesture =
   | { kind: 'brush'; last: { x: number; y: number } }
+  | { kind: 'draw'; last: { x: number; y: number } }
   | { kind: 'drag'; target: 'image' | string; start: { x: number; y: number }; orig: { x: number; y: number } }
   | {
       kind: 'pinch';
@@ -123,12 +133,16 @@ export function EditorPage({ params }: { params: URLSearchParams }) {
   const [doc, setDocState] = useState<EditorDoc>(() => defaultDoc(initialMode));
   const [hasImage, setHasImage] = useState(false);
   const [busy, setBusy] = useState<string | null>(params.get('p') ? 'Projekt wird geladen …' : null);
-  const [, setVersion] = useState(0); // erzwingt Neuzeichnen nach Bitmap-Änderungen
+  const [version, setVersion] = useState(0); // erzwingt Neuzeichnen nach Bitmap-Änderungen
+  const [, setRenderTick] = useState(0); // Neuzeichnen nach Filter-Neuberechnung
   const [selection, setSelection] = useState<'image' | string | null>(null);
   const [tab, setTabState] = useState<Tab>('text');
-  const [tool, setTool] = useState<'move' | 'erase' | 'restore'>('move');
+  const [tool, setTool] = useState<'move' | 'erase' | 'restore' | 'draw' | 'drawErase'>('move');
   const [brushSize, setBrushSize] = useState(30);
   const [tolerance, setTolerance] = useState(30);
+  const [drawColor, setDrawColor] = useState('#ef4444');
+  const [drawSize, setDrawSize] = useState(10);
+  const [showOriginal, setShowOriginal] = useState(false);
   const [showExport, setShowExport] = useState(false);
   const [textModal, setTextModal] = useState<{ layerId?: string } | null>(null);
   const [confirmBack, setConfirmBack] = useState(false);
@@ -136,6 +150,11 @@ export function EditorPage({ params }: { params: URLSearchParams }) {
   // Bitmap-Daten leben außerhalb des React-States (performance-kritisch)
   const imageRef = useRef<HTMLCanvasElement | null>(null);
   const originalRef = useRef<HTMLCanvasElement | null>(null);
+  /** Bild mit angewendeten Anpassungen (Cache); bei neutralen Werten = imageRef */
+  const filteredRef = useRef<HTMLCanvasElement | null>(null);
+  const filteredOrigRef = useRef<HTMLCanvasElement | null>(null);
+  /** Freihand-Zeichnung (512×512 Welt-Koordinaten) */
+  const drawingRef = useRef<HTMLCanvasElement | null>(null);
   const displayRef = useRef<HTMLCanvasElement>(null);
   const galleryInput = useRef<HTMLInputElement>(null);
   const cameraInput = useRef<HTMLInputElement>(null);
@@ -157,8 +176,34 @@ export function EditorPage({ params }: { params: URLSearchParams }) {
 
   const setTab = (t: Tab) => {
     setTabState(t);
-    setTool(t === 'cutout' ? 'erase' : 'move');
+    setTool(t === 'cutout' ? 'erase' : t === 'draw' ? 'draw' : 'move');
   };
+
+  /* ---------- Anpassungen: gefilterte Bild-Kopie im Cache halten ---------- */
+  useEffect(() => {
+    if (gestureActive.current) return; // während einer Geste nicht neu rechnen
+    const img = imageRef.current;
+    const orig = originalRef.current;
+    if (!img) {
+      filteredRef.current = null;
+      filteredOrigRef.current = null;
+      return;
+    }
+    if (isNeutralAdjust(doc.adjust)) {
+      filteredRef.current = img;
+      filteredOrigRef.current = orig;
+      setRenderTick((t) => t + 1);
+      return;
+    }
+    // kurz entprellen, damit Slider flüssig bleiben
+    const timer = setTimeout(() => {
+      filteredRef.current = applyAdjustments(img, doc.adjust);
+      filteredOrigRef.current = orig ? applyAdjustments(orig, doc.adjust) : null;
+      setRenderTick((t) => t + 1);
+    }, 120);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [doc.adjust, version, hasImage]);
 
   /* ---------- Initialisierung (Projekt / Vorlage / Text-Start) ---------- */
   useEffect(() => {
@@ -184,7 +229,11 @@ export function EditorPage({ params }: { params: URLSearchParams }) {
             setHasImage(true);
             setTabState('image');
           }
-          setDocState(p.doc);
+          if (p.drawingImage) {
+            drawingRef.current = await loadImageToCanvas(p.drawingImage);
+          }
+          // Ältere Projekte um neue Felder (Schatten, Anpassungen) ergänzen
+          setDocState({ ...defaultDoc(p.doc.mode), ...p.doc });
         } catch {
           toast('Projekt konnte nicht geladen werden', 'error');
         } finally {
@@ -429,20 +478,87 @@ export function EditorPage({ params }: { params: URLSearchParams }) {
     const orig = originalRef.current;
     if (!img || !orig || !doc.image) return;
     const t = doc.image;
-    brushStroke(img, orig, worldToImage(from, t, img), worldToImage(to, t, img), brushSize / 2 / t.scale, tool === 'erase' ? 'erase' : 'restore');
+    const a = worldToImage(from, t, img);
+    const b = worldToImage(to, t, img);
+    const r = brushSize / 2 / t.scale;
+    const mode = tool === 'erase' ? 'erase' : 'restore';
+    brushStroke(img, orig, a, b, r, mode);
+    // Gefilterte Kopie parallel bearbeiten, damit die Vorschau sofort stimmt
+    if (filteredRef.current && filteredRef.current !== img && filteredOrigRef.current) {
+      brushStroke(filteredRef.current, filteredOrigRef.current, a, b, r, mode);
+    }
     dirtyRef.current = true;
     bump();
   };
 
+  /** Freihand-Zeichnen / Zeichnung radieren (in Welt-Koordinaten) */
+  const applyDraw = (from: { x: number; y: number }, to: { x: number; y: number }) => {
+    if (!drawingRef.current) drawingRef.current = createCanvas(WORLD, WORLD);
+    const ctx = ctx2d(drawingRef.current);
+    ctx.save();
+    if (tool === 'drawErase') ctx.globalCompositeOperation = 'destination-out';
+    ctx.strokeStyle = drawColor;
+    ctx.fillStyle = drawColor;
+    ctx.lineWidth = drawSize;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    if (from.x === to.x && from.y === to.y) {
+      ctx.beginPath();
+      ctx.arc(from.x, from.y, drawSize / 2, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      ctx.beginPath();
+      ctx.moveTo(from.x, from.y);
+      ctx.lineTo(to.x, to.y);
+      ctx.stroke();
+    }
+    ctx.restore();
+    dirtyRef.current = true;
+    bump();
+  };
+
+  const clearDrawing = () => {
+    if (!drawingRef.current) return;
+    ctx2d(drawingRef.current).clearRect(0, 0, WORLD, WORLD);
+    dirtyRef.current = true;
+    bump();
+  };
+
+  /** Filter-Preset destruktiv anwenden (mit Undo-Schnappschuss) */
+  const onApplyFilter = (preset: FilterPreset) => {
+    const img = imageRef.current;
+    if (!img) return;
+    pushUndo();
+    setBusy('Filter wird angewendet …');
+    setTimeout(() => {
+      try {
+        applyFilterPreset(img, preset);
+        dirtyRef.current = true;
+      } catch {
+        toast('Filter fehlgeschlagen', 'error');
+      } finally {
+        setBusy(null);
+        bump();
+      }
+    }, 60);
+  };
+
   const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     e.preventDefault();
-    displayRef.current?.setPointerCapture(e.pointerId);
+    try {
+      displayRef.current?.setPointerCapture(e.pointerId);
+    } catch {
+      // Pointer bereits beendet (z. B. sehr kurzes Tippen) – Geste trotzdem starten
+    }
     const pt = worldPoint(e);
     pointers.current.set(e.pointerId, pt);
     gestureActive.current = true;
 
     if (pointers.current.size === 1) {
-      if (tool !== 'move') {
+      if (tool === 'draw' || tool === 'drawErase') {
+        gestureRef.current = { kind: 'draw', last: pt };
+        applyDraw(pt, pt);
+      } else if (tool !== 'move') {
         if (hasImage) {
           pushUndo();
           gestureRef.current = { kind: 'brush', last: pt };
@@ -463,7 +579,7 @@ export function EditorPage({ params }: { params: URLSearchParams }) {
     } else if (pointers.current.size === 2 && tool === 'move') {
       const [a, b] = [...pointers.current.values()];
       const prev = gestureRef.current;
-      const target = prev && prev.kind !== 'brush' ? prev.target : selection;
+      const target = prev && (prev.kind === 'drag' || prev.kind === 'pinch') ? prev.target : selection;
       if (!target) return;
       const startDist = Math.max(10, Math.hypot(b.x - a.x, b.y - a.y));
       const startAngle = Math.atan2(b.y - a.y, b.x - a.x);
@@ -495,6 +611,9 @@ export function EditorPage({ params }: { params: URLSearchParams }) {
 
     if (g.kind === 'brush') {
       applyBrush(g.last, pt);
+      g.last = pt;
+    } else if (g.kind === 'draw') {
+      applyDraw(g.last, pt);
       g.last = pt;
     } else if (g.kind === 'drag' && pointers.current.size === 1) {
       const dx = pt.x - g.start.x;
@@ -544,7 +663,30 @@ export function EditorPage({ params }: { params: URLSearchParams }) {
   useEffect(() => {
     const c = displayRef.current;
     if (!c) return;
-    composeDoc(c, doc, hasImage ? imageRef.current : null, gestureActive.current ? 'fast' : 'high');
+
+    // Vorher-Ansicht: unbearbeitetes Original eingepasst anzeigen
+    if (showOriginal && originalRef.current) {
+      const ctx = ctx2d(c);
+      ctx.clearRect(0, 0, c.width, c.height);
+      const orig = originalRef.current;
+      const s = Math.min(c.width / orig.width, c.height / orig.height) * 0.94;
+      ctx.drawImage(
+        orig,
+        (c.width - orig.width * s) / 2,
+        (c.height - orig.height * s) / 2,
+        orig.width * s,
+        orig.height * s,
+      );
+      return;
+    }
+
+    composeDoc(
+      c,
+      doc,
+      hasImage ? (filteredRef.current ?? imageRef.current) : null,
+      gestureActive.current ? 'fast' : 'high',
+      drawingRef.current,
+    );
 
     // Auswahl-Rahmen zeichnen (nur im Verschieben-Modus)
     if (tool === 'move' && selection) {
@@ -586,7 +728,8 @@ export function EditorPage({ params }: { params: URLSearchParams }) {
         doc,
         editedImage: img ? await encodeCanvas(img, 'png', 1) : null,
         originalImage: originalRef.current ? await encodeCanvas(originalRef.current, 'png', 1) : null,
-        thumbnail: await makeThumbnail(doc, img),
+        drawingImage: drawingRef.current ? await encodeCanvas(drawingRef.current, 'png', 1) : null,
+        thumbnail: await makeThumbnail(doc, hasImage ? (filteredRef.current ?? img) : null, drawingRef.current),
         createdAt: projectRef.current?.createdAt ?? Date.now(),
         updatedAt: Date.now(),
       };
@@ -616,6 +759,17 @@ export function EditorPage({ params }: { params: URLSearchParams }) {
           <ArrowLeft className="h-5 w-5" />
         </button>
         <h1 className="min-w-0 flex-1 truncate text-base font-bold">{MODE_TITLE[doc.mode]}</h1>
+        {hasImage && (
+          <button
+            onPointerDown={() => setShowOriginal(true)}
+            onPointerUp={() => setShowOriginal(false)}
+            onPointerLeave={() => setShowOriginal(false)}
+            className={`rounded-xl p-2.5 ${showOriginal ? 'bg-emerald-100 dark:bg-emerald-900/40' : 'active:bg-slate-100 dark:active:bg-slate-800'}`}
+            aria-label="Original anzeigen (gedrückt halten)"
+          >
+            <Eye className="h-5 w-5" />
+          </button>
+        )}
         <button
           onClick={undo}
           disabled={undoStack.current.length === 0}
@@ -713,6 +867,12 @@ export function EditorPage({ params }: { params: URLSearchParams }) {
           rotate={rotate}
           flip={flip}
           fitImage={fitImage}
+          drawColor={drawColor}
+          setDrawColor={setDrawColor}
+          drawSize={drawSize}
+          setDrawSize={setDrawSize}
+          onClearDrawing={clearDrawing}
+          onApplyFilter={onApplyFilter}
         />
       )}
 
@@ -775,7 +935,13 @@ export function EditorPage({ params }: { params: URLSearchParams }) {
         behalten.
       </Modal>
 
-      <ExportSheet open={showExport} onClose={() => setShowExport(false)} doc={doc} image={hasImage ? imageRef.current : null} />
+      <ExportSheet
+        open={showExport}
+        onClose={() => setShowExport(false)}
+        doc={doc}
+        image={hasImage ? (filteredRef.current ?? imageRef.current) : null}
+        drawing={drawingRef.current}
+      />
     </div>
   );
 }

@@ -15,14 +15,16 @@ export function ExportSheet({
   onClose,
   doc,
   image,
+  drawing,
 }: {
   open: boolean;
   onClose: () => void;
   doc: EditorDoc;
   image: HTMLCanvasElement | null;
+  drawing?: HTMLCanvasElement | null;
 }) {
   const defaults = loadSettings();
-  const [format, setFormat] = useState<'webp' | 'png'>(defaults.format);
+  const [format, setFormat] = useState<'webp' | 'png' | 'jpeg'>(defaults.format);
   const [quality, setQuality] = useState(Math.round(defaults.quality * 100));
   const [optimize, setOptimize] = useState(doc.mode === 'sticker');
   const [result, setResult] = useState<{ blob: Blob; actualFormat: string } | null>(null);
@@ -35,7 +37,7 @@ export function ExportSheet({
     let cancelled = false;
     setBusy(true);
     const t = setTimeout(() => {
-      exportSticker(doc, image, format, quality / 100, optimize)
+      exportSticker(doc, image, drawing ?? null, format, quality / 100, optimize)
         .then((r) => {
           if (!cancelled) setResult(r);
         })
@@ -49,11 +51,11 @@ export function ExportSheet({
       clearTimeout(t);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, format, quality, optimize, doc, image]);
+  }, [open, format, quality, optimize, doc, image, drawing]);
 
   if (!open) return null;
 
-  const ext = result?.actualFormat === 'webp' ? 'webp' : 'png';
+  const ext = result?.actualFormat === 'webp' ? 'webp' : result?.actualFormat === 'jpeg' ? 'jpg' : 'png';
   const filename = `sticker-studio-${Date.now()}.${ext}`;
   const tooBig = result && result.blob.size > WHATSAPP_LIMIT;
 
@@ -107,7 +109,7 @@ export function ExportSheet({
 
         {/* Format */}
         <div className="mb-3 flex gap-2">
-          {(['webp', 'png'] as const).map((f) => (
+          {(['webp', 'png', 'jpeg'] as const).map((f) => (
             <button
               key={f}
               onClick={() => setFormat(f)}
@@ -117,12 +119,17 @@ export function ExportSheet({
                   : 'border-slate-200 text-slate-400 dark:border-slate-600'
               }`}
             >
-              {f}
+              {f === 'jpeg' ? 'JPG' : f}
             </button>
           ))}
         </div>
+        {format === 'jpeg' && (
+          <p className="mb-3 text-xs text-amber-600">
+            JPG unterstützt keine Transparenz – der Hintergrund wird weiß gefüllt.
+          </p>
+        )}
 
-        {format === 'webp' && (
+        {format !== 'png' && (
           <div className="mb-3">
             <label className="mb-1 block text-xs font-semibold text-slate-500 dark:text-slate-400">
               Qualität: {quality} %

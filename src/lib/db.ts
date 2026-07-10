@@ -149,6 +149,90 @@ export async function getPack(id: string): Promise<StickerPack | undefined> {
   });
 }
 
+/* ---------- Sicherung & Wiederherstellung (Vorstufe zur Cloud-Sync) ---------- */
+
+function blobToB64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onload = () => resolve(fr.result as string);
+    fr.onerror = () => reject(fr.error ?? new Error('Blob konnte nicht gelesen werden'));
+    fr.readAsDataURL(blob);
+  });
+}
+
+async function b64ToBlob(dataUrl: string): Promise<Blob> {
+  return (await fetch(dataUrl)).blob();
+}
+
+/** Exportiert alle Projekte, Sticker, Pakete und Einstellungen als JSON-Datei. */
+export async function exportAllData(): Promise<Blob> {
+  const enc = async (b: Blob | null | undefined) => (b ? await blobToB64(b) : null);
+  const projects = await Promise.all(
+    (await listProjects()).map(async (p) => ({
+      ...p,
+      editedImage: await enc(p.editedImage),
+      originalImage: await enc(p.originalImage),
+      drawingImage: await enc(p.drawingImage),
+      thumbnail: await enc(p.thumbnail),
+    })),
+  );
+  const stickers = await Promise.all(
+    (await listStickers()).map(async (s) => ({ ...s, blob: await enc(s.blob) })),
+  );
+  const data = {
+    app: 'sticker-gif-studio',
+    backupVersion: 1,
+    exportedAt: new Date().toISOString(),
+    settings: localStorage.getItem('sgs-settings'),
+    projects,
+    stickers,
+    packs: await listPacks(),
+  };
+  return new Blob([JSON.stringify(data)], { type: 'application/json' });
+}
+
+/** Liest eine Sicherungsdatei ein; vorhandene Einträge mit gleicher ID werden überschrieben. */
+export async function importAllData(
+  file: Blob,
+): Promise<{ projects: number; stickers: number; packs: number }> {
+  const data = JSON.parse(await file.text()) as {
+    app?: string;
+    settings?: string | null;
+    projects?: Array<Record<string, unknown>>;
+    stickers?: Array<Record<string, unknown>>;
+    packs?: StickerPack[];
+  };
+  if (data.app !== 'sticker-gif-studio') {
+    throw new Error('Keine gültige Sicherungsdatei');
+  }
+  const dec = async (s: unknown) => (typeof s === 'string' ? await b64ToBlob(s) : null);
+  const counts = { projects: 0, stickers: 0, packs: 0 };
+  for (const p of data.projects ?? []) {
+    const thumbnail = await dec(p.thumbnail);
+    if (!thumbnail) continue;
+    await saveProject({
+      ...(p as unknown as Project),
+      editedImage: await dec(p.editedImage),
+      originalImage: await dec(p.originalImage),
+      drawingImage: await dec(p.drawingImage),
+      thumbnail,
+    });
+    counts.projects++;
+  }
+  for (const s of data.stickers ?? []) {
+    const blob = await dec(s.blob);
+    if (!blob) continue;
+    await saveSticker({ ...(s as unknown as LibrarySticker), blob });
+    counts.stickers++;
+  }
+  for (const pack of data.packs ?? []) {
+    await savePack(pack);
+    counts.packs++;
+  }
+  if (typeof data.settings === 'string') localStorage.setItem('sgs-settings', data.settings);
+  return counts;
+}
+
 /** Löscht sämtliche lokal gespeicherten Daten (Projekte, Einstellungen, Caches). */
 export async function wipeAllData(): Promise<void> {
   if (dbPromise) {

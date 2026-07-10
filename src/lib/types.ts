@@ -32,12 +32,23 @@ export interface ImageTransform {
   flipY: boolean;
 }
 
+/** Nicht-destruktive Bildanpassungen (100 = neutral, Wärme 0 = neutral) */
+export interface Adjustments {
+  brightness: number;
+  contrast: number;
+  saturation: number;
+  temperature: number;
+}
+
 /** Serialisierbarer Editor-Zustand (ohne Bitmap-Daten) */
 export interface EditorDoc {
   mode: EditorMode;
   /** Hintergrundfarbe oder null = transparent */
   bg: string | null;
   border: { enabled: boolean; color: string; width: number };
+  /** Schlagschatten unter dem Inhalt */
+  shadow: { enabled: boolean; blur: number; offset: number };
+  adjust: Adjustments;
   image: ImageTransform | null;
   layers: TextLayer[];
   /** Rundes Zuschneiden (Profilbild) */
@@ -54,6 +65,8 @@ export interface Project {
   editedImage: Blob | null;
   /** Unverändertes Originalbild */
   originalImage: Blob | null;
+  /** Freihand-Zeichnung (PNG, 512×512), falls vorhanden */
+  drawingImage?: Blob | null;
   /** Kleine Vorschau (PNG, 160px) */
   thumbnail: Blob;
   createdAt: number;
