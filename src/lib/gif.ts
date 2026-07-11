@@ -16,30 +16,28 @@ export type Direction = 'forward' | 'reverse' | 'pingpong';
 /** Obergrenze, damit Speicher und Kodierzeit auf Smartphones beherrschbar bleiben */
 export const MAX_FRAMES = 150;
 export const MAX_VIDEO_BYTES = 120 * 1024 * 1024;
-const VIDEO_LOAD_TIMEOUT_MS = 15_000;
-const VIDEO_SEEK_TIMEOUT_MS = 10_000;
-
-function cleanupVideoListeners(
-  video: HTMLVideoElement,
-  events: string[],
-  onReady: () => void,
-  onError: () => void,
-  timer: number,
-) {
-  for (const event of events) video.removeEventListener(event, onReady);
-  video.removeEventListener('error', onError);
-  clearTimeout(timer);
-}
+// Große (z. B. aus iCloud geladene) Videos dürfen länger zum Öffnen brauchen.
+const VIDEO_LOAD_TIMEOUT_MS = 45_000;
+const VIDEO_SEEK_TIMEOUT_MS = 15_000;
 
 /* ---------- Quellen laden ---------- */
 
-/** Video-Metadaten (Dauer, Abmessungen) auslesen */
+/**
+ * Video-Metadaten (Dauer, Abmessungen) auslesen – robust für iOS/Safari.
+ *
+ * Bewusst OHNE `video.play()`: iOS blockiert das ohne Nutzergeste und es
+ * verhindert dann das Laden. Stattdessen erzwingen zwei gezielte Sprünge
+ * (weit ans Ende → zurück an den Anfang) die Dauer und das erste Bild,
+ * die Safari bei mit dem iPhone aufgenommenen Videos (HEVC/H.265) sonst
+ * erst spät liefert.
+ */
 export function loadVideo(file: Blob, onStatus?: (label: string) => void): Promise<HTMLVideoElement> {
   return new Promise((resolve, reject) => {
     onStatus?.('Video wird vorbereitet ...');
     const video = document.createElement('video');
     video.preload = 'auto';
     video.muted = true;
+    video.defaultMuted = true;
     video.playsInline = true;
     video.controls = false;
     video.setAttribute('muted', '');
@@ -49,65 +47,91 @@ export function loadVideo(file: Blob, onStatus?: (label: string) => void): Promi
       'position:fixed;left:-1px;top:-1px;width:1px;height:1px;opacity:0;pointer-events:none;';
     document.body.appendChild(video);
     const src = URL.createObjectURL(file);
-    const readyEvents = ['loadedmetadata', 'durationchange', 'resize', 'loadeddata', 'canplay', 'seeked'];
 
-    const isReady = () =>
-      Number.isFinite(video.duration) &&
-      video.duration > 0 &&
-      video.videoWidth > 0 &&
-      video.videoHeight > 0;
+    const events = ['loadedmetadata', 'durationchange', 'loadeddata', 'canplay', 'canplaythrough', 'seeked'];
+    let settled = false;
+    let forcedDuration = false;
+    let forcedFrame = false;
 
-    // iOS/Safari melden bei manchen (z. B. mit dem iPhone aufgenommenen) Videos
-    // zunächst duration = Infinity. Erst ein Sprung weit hinter das Ende erzwingt
-    // die Berechnung der echten Länge. Danach zurück an den Anfang springen.
-    let forcedDurationSeek = false;
-    const kickSafari = () => {
-      if (Number.isFinite(video.duration) && video.duration > 0) {
-        onStatus?.('Videovorschau wird vorbereitet ...');
-        const targetTime = Math.min(0.05, Math.max(0, video.duration - 0.05));
-        if (Math.abs(video.currentTime - targetTime) > 0.02) {
-          try {
-            video.currentTime = targetTime;
-          } catch {
-            /* Safari kann das Setzen kurz vor HAVE_METADATA ablehnen. */
-          }
-        }
-      } else if (video.readyState >= HTMLMediaElement.HAVE_METADATA && !forcedDurationSeek) {
-        // Länge unbekannt, aber Metadaten da → einmalig weit ans Ende spulen
-        onStatus?.('Videodaten werden gelesen ...');
-        forcedDurationSeek = true;
-        try {
-          video.currentTime = 1e101;
-        } catch {
-          /* ignorieren – der play()-Fallback greift */
-        }
-      } else {
-        onStatus?.('Videodaten werden gelesen ...');
-      }
-      void video
-        .play()
-        .then(() => video.pause())
-        .catch(() => undefined);
+    const hasDims = () => video.videoWidth > 0 && video.videoHeight > 0;
+    const hasDuration = () => Number.isFinite(video.duration) && video.duration > 0;
+
+    const cleanup = () => {
+      for (const e of events) video.removeEventListener(e, onEvent);
+      video.removeEventListener('error', onError);
+      clearTimeout(timer);
     };
 
-    const finish = () => {
-      kickSafari();
-      if (!isReady()) return;
-      cleanupVideoListeners(video, readyEvents, finish, fail, timer);
-      video.pause();
+    const done = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      // Für Vorschau/Extraktion wieder an den Anfang stellen
+      if (video.currentTime > 0.1) {
+        try {
+          video.currentTime = 0;
+        } catch {
+          /* egal */
+        }
+      }
       resolve(video);
     };
 
     const fail = () => {
-      cleanupVideoListeners(video, readyEvents, finish, fail, timer);
+      if (settled) return;
+      settled = true;
+      cleanup();
       video.remove();
       URL.revokeObjectURL(src);
-      reject(new Error('Video konnte nicht gelesen werden. Bitte versuche MP4/H.264 oder kuerze das Video in Fotos.'));
+      reject(
+        new Error(
+          'Dieses Video ließ sich nicht öffnen. Tipp: In der Fotos-App das Video kurz zuschneiden und „Als neuen Clip sichern“ – dann klappt es meist.',
+        ),
+      );
     };
 
-    const timer = window.setTimeout(fail, VIDEO_LOAD_TIMEOUT_MS);
-    for (const event of readyEvents) video.addEventListener(event, finish);
-    video.addEventListener('error', fail);
+    const onEvent = () => {
+      if (settled) return;
+      // 1) Dauer erzwingen, falls sie (wie oft bei iPhone-Videos) noch Infinity ist
+      if (video.readyState >= 1 && !hasDuration() && !forcedDuration) {
+        forcedDuration = true;
+        onStatus?.('Videodaten werden gelesen ...');
+        try {
+          video.currentTime = 1e101;
+        } catch {
+          /* Safari kann das kurz vor HAVE_METADATA ablehnen – Events kommen erneut */
+        }
+        return;
+      }
+      // 2) Erstes Bild erzwingen (iOS liefert videoWidth teils erst nach einem Seek)
+      if (hasDuration() && !hasDims() && !forcedFrame) {
+        forcedFrame = true;
+        onStatus?.('Videovorschau wird vorbereitet ...');
+        try {
+          video.currentTime = 0;
+        } catch {
+          /* egal */
+        }
+        return;
+      }
+      // 3) Dauer und Abmessungen vorhanden → fertig
+      if (hasDuration() && hasDims()) {
+        onStatus?.('Videovorschau wird vorbereitet ...');
+        done();
+      }
+    };
+
+    const onError = () => fail();
+
+    // Notbremse: falls nach dem Timeout wenigstens Abmessungen da sind, trotzdem
+    // weitermachen (Dauer wird beim Trimmen notfalls konservativ behandelt).
+    const timer = window.setTimeout(() => {
+      if (hasDims() && hasDuration()) done();
+      else fail();
+    }, VIDEO_LOAD_TIMEOUT_MS);
+
+    for (const e of events) video.addEventListener(e, onEvent);
+    video.addEventListener('error', onError);
     video.src = src;
 
     try {
