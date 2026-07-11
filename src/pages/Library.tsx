@@ -3,7 +3,7 @@
  * und Stickerpakete verwalten.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { Star, Search, Plus, Package, ChevronRight, Trash2, Share2, Download } from 'lucide-react';
+import { Star, Search, Plus, Package, ChevronRight, Trash2, Share2, Download, Clock } from 'lucide-react';
 import { listStickers, saveSticker, deleteSticker, listPacks, savePack } from '../lib/db';
 import { navigate } from '../lib/router';
 import { useToast } from '../components/Toast';
@@ -97,6 +97,25 @@ export function LibraryPage() {
     reload();
   };
 
+  /** Direkt teilen (ein Tipp) – ohne Detailansicht; merkt sich die Nutzung. */
+  const directShare = async (s: LibrarySticker) => {
+    const ext = s.blob.type.split('/')[1] || 'png';
+    try {
+      const shared = await shareOrDownload(s.blob, `${s.name || 'sticker'}.${ext}`, s.name);
+      toast(shared ? 'Teilen geöffnet' : 'Heruntergeladen', 'success');
+    } catch {
+      toast('Teilen fehlgeschlagen', 'error');
+    }
+    await saveSticker({ ...s, lastUsedAt: Date.now() });
+    reload();
+  };
+
+  /** Zuletzt erstellte Sticker (neueste zuerst) für die Schnellzugriff-Leiste */
+  const recent = useMemo(
+    () => [...stickers].sort((a, b) => b.createdAt - a.createdAt).slice(0, 12),
+    [stickers],
+  );
+
   const addToPack = async (pack: StickerPack) => {
     if (!detail) return;
     if (pack.stickerIds.includes(detail.id)) {
@@ -142,6 +161,34 @@ export function LibraryPage() {
 
       {tab === 'stickers' && (
         <>
+          {/* Zuletzt erstellt – Schnellzugriff mit Direkt-Teilen */}
+          {recent.length > 0 && (
+            <div className="mb-4">
+              <div className="mb-2 flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-slate-400">
+                <Clock className="h-3.5 w-3.5" /> Zuletzt erstellt
+              </div>
+              <div className="flex gap-3 overflow-x-auto pb-2">
+                {recent.map((s) => (
+                  <div key={s.id} className="relative shrink-0">
+                    <button
+                      onClick={() => setDetail(s)}
+                      className="checkerboard block h-20 w-20 overflow-hidden rounded-2xl ring-1 ring-slate-200 active:opacity-80 dark:ring-slate-700"
+                    >
+                      {urls[s.id] && <img src={urls[s.id]} alt={s.name} className="h-full w-full object-contain" />}
+                    </button>
+                    <button
+                      onClick={() => void directShare(s)}
+                      className="absolute -bottom-1.5 -right-1.5 rounded-full bg-emerald-500 p-1.5 text-white shadow-md ring-2 ring-white active:scale-95 dark:ring-slate-900"
+                      aria-label={`${s.name} direkt teilen`}
+                    >
+                      <Share2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Suche & Filter */}
           <div className="mb-3 flex items-center gap-2 rounded-2xl bg-white px-3 py-2.5 shadow-sm ring-1 ring-slate-100 dark:bg-slate-800 dark:ring-slate-700">
             <Search className="h-5 w-5 shrink-0 text-slate-400" />
@@ -178,6 +225,13 @@ export function LibraryPage() {
                   aria-label="Favorit"
                 >
                   <Star className={`h-4 w-4 ${s.favorite ? 'fill-amber-400 text-amber-400' : 'text-slate-400'}`} />
+                </button>
+                <button
+                  onClick={() => void directShare(s)}
+                  className="absolute left-1 top-1 rounded-full bg-emerald-500/90 p-1.5 text-white shadow active:scale-95"
+                  aria-label={`${s.name} direkt teilen`}
+                >
+                  <Share2 className="h-4 w-4" />
                 </button>
                 <div className="truncate px-2 py-1.5 text-[11px] font-semibold">{s.name}</div>
               </div>
