@@ -124,26 +124,47 @@ export function GifStudioPage({ params }: { params: URLSearchParams }) {
    */
   const convertAndLoad = async (file: File) => {
     setConvertFile(null);
+    // Stufen: erst moderat, bei Fehler (z. B. wenig Speicher auf dem Handy)
+    // automatisch kleiner/kürzer erneut versuchen.
+    const attempts: { maxSeconds: number; maxDim: number; fps: number }[] = [
+      { maxSeconds: 20, maxDim: 480, fps: 15 },
+      { maxSeconds: 12, maxDim: 360, fps: 12 },
+      { maxSeconds: 8, maxDim: 288, fps: 10 },
+    ];
     try {
       // ffmpeg erst hier laden (Code-Splitting) – hält das Start-Bundle klein
       const { transcodeToMp4, isFfmpegReady } = await import('../lib/ffmpeg');
       if (!isFfmpegReady()) {
         setBusy({ label: 'Konverter wird geladen … (einmalig ~31 MB)', progress: null });
       }
-      setBusy({ label: 'Video wird umgewandelt …', progress: 0 });
-      const mp4 = await transcodeToMp4(
-        file,
-        { maxSeconds: 30, maxDim: 720, fps: 24 },
-        (r) => setBusy({ label: 'Video wird umgewandelt …', progress: r }),
-      );
+
+      let mp4: Blob | null = null;
+      let lastErr: unknown = null;
+      for (let i = 0; i < attempts.length; i++) {
+        const a = attempts[i];
+        const suffix = i === 0 ? '' : ` (Versuch ${i + 1})`;
+        setBusy({ label: `Video wird umgewandelt …${suffix}`, progress: 0 });
+        try {
+          mp4 = await transcodeToMp4(file, a, (r) =>
+            setBusy({ label: `Video wird umgewandelt …${suffix}`, progress: r }),
+          );
+          break;
+        } catch (err) {
+          lastErr = err;
+          console.warn(`Konvertierung Stufe ${i + 1} fehlgeschlagen:`, err);
+        }
+      }
+      if (!mp4) throw lastErr ?? new Error('Konvertierung fehlgeschlagen');
+
       setBusy({ label: 'Video wird geladen …', progress: null });
       const video = await loadVideo(mp4, (label) => setBusy({ label, progress: null }));
       setBusy(null);
       useLoadedVideo(video);
-      toast('Video umgewandelt – es werden bis zu 30 Sekunden verwendet', 'info');
-    } catch {
+      toast('Video umgewandelt – es wird ein kurzer Ausschnitt verwendet', 'info');
+    } catch (err) {
+      console.error('Alles-Konverter fehlgeschlagen:', err);
       setBusy(null);
-      toast('Umwandlung fehlgeschlagen. Bitte ein anderes Video versuchen.', 'error');
+      toast('Umwandlung fehlgeschlagen. Tipp: Video in der Fotos-App kürzen und erneut versuchen.', 'error');
     }
   };
 

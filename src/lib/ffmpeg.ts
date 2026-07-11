@@ -14,6 +14,21 @@ export function isFfmpegReady(): boolean {
   return !!instance?.loaded;
 }
 
+/**
+ * Verwirft die aktuelle ffmpeg-Instanz. Nötig nach einem Abbruch (z. B. wenn
+ * dem WASM-Kern der Speicher ausging), da die Instanz danach unbrauchbar ist –
+ * der nächste Aufruf lädt einen frischen Kern.
+ */
+export function resetFfmpeg(): void {
+  try {
+    instance?.terminate();
+  } catch {
+    /* egal */
+  }
+  instance = null;
+  loadPromise = null;
+}
+
 /** Lädt den Konverter-Kern (einmalig). Die Core-Dateien liegen lokal in /ffmpeg. */
 export function loadFfmpeg(): Promise<FFmpeg> {
   if (instance?.loaded) return Promise.resolve(instance);
@@ -67,7 +82,14 @@ export async function transcodeToMp4(
   const maxDim = opts.maxDim ?? 640;
 
   const onProg = (e: { progress: number }) => onProgress?.(Math.max(0, Math.min(1, e.progress)));
+  // Letzte Log-Zeilen mitschneiden, um bei Fehlern die echte Ursache zu kennen
+  const logLines: string[] = [];
+  const onLog = (e: { message: string }) => {
+    logLines.push(e.message);
+    if (logLines.length > 40) logLines.shift();
+  };
   ff.on('progress', onProg);
+  ff.on('log', onLog);
 
   try {
     await ff.writeFile(input, await fetchFile(file));
@@ -77,14 +99,17 @@ export async function transcodeToMp4(
     const scale = `scale=${maxDim}:${maxDim}:force_original_aspect_ratio=decrease:force_divisible_by=2`;
     const vf = opts.fps ? `${scale},fps=${opts.fps}` : scale;
     const args = [
+      '-threads', '1',
       '-i', input,
       ...(opts.maxSeconds ? ['-t', String(opts.maxSeconds)] : []),
       '-vf', vf,
-      '-an', // kein Ton nötig
+      '-an', // kein Ton
+      '-sn', // keine Untertitel
+      '-dn', // keine Datenspuren
       '-c:v', 'libx264',
       '-pix_fmt', 'yuv420p',
       '-preset', 'ultrafast',
-      '-crf', '26',
+      '-crf', '28',
       '-movflags', '+faststart',
       output,
     ];
@@ -92,10 +117,20 @@ export async function transcodeToMp4(
     const data = (await ff.readFile(output)) as Uint8Array;
     if (!data || data.length === 0) throw new Error('Konvertierung ergab kein Video');
     return new Blob([data], { type: 'video/mp4' });
+  } catch (err) {
+    // Nach einem WASM-Abbruch ist die Instanz tot → verwerfen, damit ein
+    // erneuter Versuch (ggf. mit kleineren Werten) einen frischen Kern lädt.
+    resetFfmpeg();
+    const tail = logLines.slice(-6).join(' | ');
+    throw new Error(`ffmpeg: ${(err as Error)?.message || 'Abbruch'}${tail ? ' — ' + tail : ''}`);
   } finally {
-    ff.off('progress', onProg);
-    // Aufräumen (Speicher freigeben)
-    await ff.deleteFile(input).catch(() => undefined);
-    await ff.deleteFile(output).catch(() => undefined);
+    try {
+      ff.off('progress', onProg);
+      ff.off('log', onLog);
+      await ff.deleteFile(input).catch(() => undefined);
+      await ff.deleteFile(output).catch(() => undefined);
+    } catch {
+      /* Instanz evtl. schon beendet */
+    }
   }
 }
