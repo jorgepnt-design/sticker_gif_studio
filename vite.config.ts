@@ -8,6 +8,9 @@ const BASE = '/sticker_gif_studio/';
 
 export default defineConfig(({ command }) => ({
   base: command === 'build' ? BASE : '/',
+  // @ffmpeg/ffmpeg startet intern einen Worker; Vites Dep-Optimierung bricht
+  // dessen Auflösung im Dev-Modus. Ausschließen, damit der Konverter auch dort lädt.
+  optimizeDeps: { exclude: ['@ffmpeg/ffmpeg', '@ffmpeg/util'] },
   plugins: [
     react(),
     tailwindcss(),

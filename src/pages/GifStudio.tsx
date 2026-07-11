@@ -74,6 +74,8 @@ export function GifStudioPage({ params }: { params: URLSearchParams }) {
   const [result, setResult] = useState<{ blob: Blob; url: string } | null>(null);
   const [confirmBack, setConfirmBack] = useState(false);
   const [showWaGif, setShowWaGif] = useState(false);
+  // Datei, die sich nicht nativ öffnen ließ → Angebot „Alles-Konverter“
+  const [convertFile, setConvertFile] = useState<File | null>(null);
   const cancelRef = useRef<(() => void) | null>(null);
 
   const previewRef = useRef<HTMLCanvasElement>(null);
@@ -86,6 +88,19 @@ export function GifStudioPage({ params }: { params: URLSearchParams }) {
 
   /* ---------- Quellen laden ---------- */
 
+  /** Geladenes Video übernehmen und zum Trim-Schritt wechseln. */
+  const useLoadedVideo = (video: HTMLVideoElement) => {
+    videoRef.current = video;
+    const dur = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 60;
+    setVideoDur(dur);
+    setTrimStart(0);
+    setTrimEnd(Math.min(dur, mode === 'anim' ? 6 : 10));
+    if (mode === 'anim' && dur > 10) {
+      toast('Für WhatsApp sollten animierte Sticker kurz sein – wähle einen Ausschnitt.', 'info');
+    }
+    setStep('trim');
+  };
+
   const pickVideo = async (file: File) => {
     if (file.size > MAX_VIDEO_BYTES) {
       toast('Video ist zu groß (max. 120 MB)', 'error');
@@ -94,19 +109,41 @@ export function GifStudioPage({ params }: { params: URLSearchParams }) {
     setBusy({ label: 'Video wird geladen …', progress: null });
     try {
       const video = await loadVideo(file, (label) => setBusy({ label, progress: null }));
-      videoRef.current = video;
-      const dur = video.duration;
-      setVideoDur(dur);
-      setTrimStart(0);
-      setTrimEnd(Math.min(dur, mode === 'anim' ? 6 : 10));
-      if (mode === 'anim' && dur > 10) {
-        toast('Für WhatsApp sollten animierte Sticker kurz sein – wähle einen Ausschnitt.', 'info');
-      }
-      setStep('trim');
-    } catch (err) {
-      toast(err instanceof Error ? err.message : 'Video konnte nicht gelesen werden', 'error');
-    } finally {
       setBusy(null);
+      useLoadedVideo(video);
+    } catch {
+      // Nativ nicht lesbar → Alles-Konverter anbieten (ffmpeg im Browser)
+      setBusy(null);
+      setConvertFile(file);
+    }
+  };
+
+  /**
+   * Fallback: Video mit ffmpeg.wasm in ein kompatibles MP4 umwandeln und dann
+   * regulär laden. Funktioniert mit praktisch jedem Videoformat.
+   */
+  const convertAndLoad = async (file: File) => {
+    setConvertFile(null);
+    try {
+      // ffmpeg erst hier laden (Code-Splitting) – hält das Start-Bundle klein
+      const { transcodeToMp4, isFfmpegReady } = await import('../lib/ffmpeg');
+      if (!isFfmpegReady()) {
+        setBusy({ label: 'Konverter wird geladen … (einmalig ~31 MB)', progress: null });
+      }
+      setBusy({ label: 'Video wird umgewandelt …', progress: 0 });
+      const mp4 = await transcodeToMp4(
+        file,
+        { maxSeconds: 30, maxDim: 720, fps: 24 },
+        (r) => setBusy({ label: 'Video wird umgewandelt …', progress: r }),
+      );
+      setBusy({ label: 'Video wird geladen …', progress: null });
+      const video = await loadVideo(mp4, (label) => setBusy({ label, progress: null }));
+      setBusy(null);
+      useLoadedVideo(video);
+      toast('Video umgewandelt – es werden bis zu 30 Sekunden verwendet', 'info');
+    } catch {
+      setBusy(null);
+      toast('Umwandlung fehlgeschlagen. Bitte ein anderes Video versuchen.', 'error');
     }
   };
 
@@ -792,6 +829,26 @@ export function GifStudioPage({ params }: { params: URLSearchParams }) {
         onClose={() => setConfirmBack(false)}
       >
         Die geladenen Frames gehen verloren.
+      </Modal>
+
+      <Modal
+        open={!!convertFile}
+        title="Video umwandeln?"
+        confirmLabel="Jetzt umwandeln"
+        onConfirm={() => convertFile && void convertAndLoad(convertFile)}
+        onClose={() => setConvertFile(null)}
+      >
+        <div className="space-y-2 text-left">
+          <p>
+            Dieses Video ließ sich nicht direkt öffnen. Der <strong>Alles-Konverter</strong> kann es umwandeln – damit
+            funktionieren praktisch alle Formate (auch iPhone-HEVC).
+          </p>
+          <p className="text-xs text-slate-400">
+            Beim ersten Mal wird der Konverter geladen (einmalig ~31&nbsp;MB, danach offline verfügbar). Es werden die
+            ersten <strong>30&nbsp;Sekunden</strong> des Videos verwendet; die Umwandlung läuft komplett auf deinem
+            Gerät.
+          </p>
+        </div>
       </Modal>
 
       <Modal
