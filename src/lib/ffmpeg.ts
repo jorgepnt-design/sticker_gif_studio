@@ -6,6 +6,7 @@
  */
 import { FFmpeg } from '@ffmpeg/ffmpeg';
 import { toBlobURL, fetchFile } from '@ffmpeg/util';
+import { createCanvas, ctx2d } from './imaging';
 
 let instance: FFmpeg | null = null;
 let loadPromise: Promise<FFmpeg> | null = null;
@@ -129,6 +130,85 @@ export async function transcodeToMp4(
       ff.off('log', onLog);
       await ff.deleteFile(input).catch(() => undefined);
       await ff.deleteFile(output).catch(() => undefined);
+    } catch {
+      /* Instanz evtl. schon beendet */
+    }
+  }
+}
+
+export interface ExtractOptions {
+  maxSeconds?: number;
+  maxDim?: number;
+  fps?: number;
+}
+
+/**
+ * Extrahiert Frames direkt mit ffmpeg als Einzelbilder und dekodiert sie zu
+ * Canvas-Frames. Umgeht das native <video>-Element komplett – das ist auf iOS
+ * am zuverlässigsten, weil dort das Laden mancher Videos scheitert.
+ */
+export async function extractFramesViaFfmpeg(
+  file: Blob,
+  opts: ExtractOptions = {},
+  onProgress?: (ratio: number) => void,
+): Promise<{ canvas: HTMLCanvasElement; delay: number }[]> {
+  const ff = await loadFfmpeg();
+  const input = `src.${guessExt(file)}`;
+  const maxDim = opts.maxDim ?? 480;
+  const fps = opts.fps ?? 12;
+  const maxSeconds = opts.maxSeconds ?? 8;
+
+  const logLines: string[] = [];
+  const onLog = (e: { message: string }) => {
+    logLines.push(e.message);
+    if (logLines.length > 40) logLines.shift();
+  };
+  const onProg = (e: { progress: number }) => onProgress?.(Math.max(0, Math.min(1, e.progress)));
+  ff.on('log', onLog);
+  ff.on('progress', onProg);
+
+  try {
+    await ff.writeFile(input, await fetchFile(file));
+    const scale = `scale=${maxDim}:${maxDim}:force_original_aspect_ratio=decrease:force_divisible_by=2`;
+    await ff.exec([
+      '-threads', '1',
+      '-i', input,
+      '-t', String(maxSeconds),
+      '-vf', `${scale},fps=${fps}`,
+      '-an', '-sn', '-dn',
+      '-q:v', '5',
+      'frame_%04d.jpg',
+    ]);
+
+    // Erzeugte Frame-Dateien einsammeln
+    const dir = await ff.listDir('/');
+    const names = dir
+      .filter((f) => !f.isDir && /^frame_\d+\.jpg$/.test(f.name))
+      .map((f) => f.name)
+      .sort();
+    if (!names.length) throw new Error('Keine Frames extrahiert');
+
+    const delay = Math.round(1000 / fps);
+    const frames: { canvas: HTMLCanvasElement; delay: number }[] = [];
+    for (const name of names.slice(0, 150)) {
+      const data = (await ff.readFile(name)) as Uint8Array;
+      const bmp = await createImageBitmap(new Blob([data], { type: 'image/jpeg' }));
+      const c = createCanvas(bmp.width, bmp.height);
+      ctx2d(c).drawImage(bmp, 0, 0);
+      bmp.close?.();
+      frames.push({ canvas: c, delay });
+      await ff.deleteFile(name).catch(() => undefined);
+    }
+    return frames;
+  } catch (err) {
+    resetFfmpeg();
+    const tail = logLines.slice(-6).join(' | ');
+    throw new Error(`ffmpeg: ${(err as Error)?.message || 'Abbruch'}${tail ? ' — ' + tail : ''}`);
+  } finally {
+    try {
+      ff.off('log', onLog);
+      ff.off('progress', onProg);
+      await ff.deleteFile(input).catch(() => undefined);
     } catch {
       /* Instanz evtl. schon beendet */
     }
