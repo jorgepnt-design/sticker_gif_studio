@@ -796,24 +796,31 @@ export function GifStudioPage({ params }: { params: URLSearchParams }) {
 
       <Modal
         open={showWaGif}
-        title="Als GIF in WhatsApp verwenden"
+        title="GIF in WhatsApp senden & wiederverwenden"
         confirmLabel="Verstanden"
         onConfirm={() => setShowWaGif(false)}
         onClose={() => setShowWaGif(false)}
       >
-        <div className="space-y-2 text-left">
-          <p>
-            WhatsApp fügt eigene GIFs am zuverlässigsten über ein <strong>kurzes Video</strong> hinzu (bis 6&nbsp;Sek.):
-          </p>
+        <div className="space-y-3 text-left">
+          <p>So sendest du deine Animation als GIF in einem Chat:</p>
           <ol className="list-decimal space-y-1 pl-4">
             <li>Oben auf <strong>„Als WhatsApp-GIF (Video)“</strong> tippen und das Video <strong>in Fotos/Galerie speichern</strong>.</li>
-            <li>In WhatsApp einen Chat öffnen → <strong>Anhang (＋)</strong> → <strong>Foto &amp; Video</strong> → das gespeicherte Video wählen.</li>
+            <li>In WhatsApp einen Chat öffnen → <strong>Anhang (＋)</strong> → <strong>Foto &amp; Video</strong> → das Video wählen.</li>
             <li>Oben auf den <strong>„GIF“-Schalter</strong> tippen (erscheint bei Videos bis 6&nbsp;Sek.) und senden.</li>
-            <li>Danach erscheint dein GIF in WhatsApp unter den <strong>zuletzt verwendeten GIFs</strong> (GIF-Symbol im Emoji-Feld).</li>
           </ol>
+          <div className="rounded-xl bg-amber-50 p-3 text-xs text-amber-800 dark:bg-amber-900/30 dark:text-amber-200">
+            <strong>Wichtig – ehrlich gesagt:</strong> WhatsApp speichert selbst erstellte GIFs <strong>nicht</strong>
+            dauerhaft im GIF-Bereich (das GIF-Symbol zeigt nur die Giphy-/Tenor-Suche und Favoriten daraus). Ein
+            lokales GIF lässt sich dort nicht ablegen – das ist eine Einschränkung von WhatsApp, nicht dieser App.
+          </div>
+          <p className="font-semibold">Zum Wiederverwenden gibt es zwei zuverlässige Wege:</p>
+          <ul className="list-disc space-y-1 pl-4">
+            <li><strong>In dieser App:</strong> auf <strong>„In Bibliothek“</strong> tippen – dort bleibt dein GIF gespeichert und lässt sich jederzeit erneut teilen.</li>
+            <li><strong>In Fotos:</strong> das gespeicherte Video bleibt in deiner Galerie und kann jederzeit erneut über den GIF-Schalter gesendet werden.</li>
+          </ul>
           <p className="text-xs text-slate-400">
-            Hinweis: Ein direktes „Zu WhatsApp-GIFs hinzufügen“ per Knopfdruck erlauben nur native Apps – über den
-            Video-Weg klappt es aber zuverlässig auf iPhone und Android.
+            Nur wenn dein GIF in der WhatsApp-<em>Suche</em> auffindbar sein soll, müsstest du es öffentlich bei
+            Giphy oder Tenor hochladen – dann kannst du es in WhatsApp suchen und als Favorit markieren.
           </p>
         </div>
       </Modal>
