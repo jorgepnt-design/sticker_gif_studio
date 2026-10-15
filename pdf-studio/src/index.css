@@ -1,0 +1,61 @@
+@import 'tailwindcss';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+html,
+body {
+  height: 100%;
+  -webkit-tap-highlight-color: transparent;
+  font-family:
+    ui-rounded,
+    'SF Pro Rounded',
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    sans-serif;
+}
+
+body {
+  @apply bg-slate-50 text-slate-900 dark:bg-[#0d1117] dark:text-slate-100;
+}
+
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.safe-top {
+  padding-top: env(safe-area-inset-top);
+}
+
+input[type='range'] {
+  @apply h-2 w-full cursor-pointer appearance-none rounded-full bg-slate-200 accent-rose-500 dark:bg-slate-700;
+}
+input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  @apply h-6 w-6 rounded-full border-2 border-white bg-rose-500 shadow-md;
+}
+
+@keyframes page-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.page-in {
+  animation: page-in 0.25s ease-out;
+}
+
+.no-select {
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+}
+
+/* Schriftart für getippte Unterschriften */
+.font-signature {
+  font-family: 'Segoe Script', 'Brush Script MT', 'Snell Roundhand', 'Apple Chancery', cursive;
+}
